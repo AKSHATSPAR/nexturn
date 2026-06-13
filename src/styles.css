@@ -342,17 +342,20 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
   gap: 14px;
+  align-items: start;
 }
 
 .primary-column {
   display: grid;
   gap: 14px;
+  align-content: start;
 }
 
 .analysis-grid {
   display: grid;
   grid-template-columns: 344px minmax(0, 1fr);
   gap: 14px;
+  align-items: start;
 }
 
 .analysis-stack {
@@ -762,7 +765,8 @@ h1 {
 
 .match-panel,
 .alternatives-panel,
-.passport-panel {
+.passport-panel,
+.fit-panel {
   padding-bottom: 12px;
 }
 
@@ -852,6 +856,52 @@ h1 {
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
+}
+
+.fit-panel {
+  padding: 0 16px 14px;
+}
+
+.fit-panel .panel-heading {
+  padding-inline: 0;
+}
+
+.fit-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.fit-score strong {
+  color: var(--green);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.fit-score span {
+  color: #1f2a33;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fit-panel p {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fit-panel button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 12px;
+  color: var(--green-deep);
+  background: #fff;
+  border: 1px solid rgba(15, 141, 70, 0.38);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .passport-panel {

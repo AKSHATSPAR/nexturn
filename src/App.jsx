@@ -34,6 +34,7 @@ import {
   formatCurrency,
   summarizeDecision,
 } from "./lib/decisionEngine";
+import { rankPurchaseFit } from "./lib/purchaseFit";
 import { lockRoute } from "./services/returnResolutionApi";
 
 const navItems = [
@@ -350,6 +351,8 @@ function RouteComparison({ routes, selectedRouteId, onSelect }) {
 }
 
 function MatchRail({ selectedRouteId }) {
+  const fitRanking = rankPurchaseFit(refurbishedAlternatives, returnCase.customer);
+
   return (
     <aside className="right-rail">
       <section className="panel match-panel">
@@ -407,8 +410,33 @@ function MatchRail({ selectedRouteId }) {
         </button>
       </section>
 
+      <PurchaseFitPanel fitRanking={fitRanking} />
+
       <TrustPassport selectedRouteId={selectedRouteId} />
     </aside>
+  );
+}
+
+function PurchaseFitPanel({ fitRanking }) {
+  const bestFit = fitRanking[0];
+
+  return (
+    <section className="panel fit-panel">
+      <div className="panel-heading">
+        <h2>
+          <ClipboardCheck size={18} /> Purchase fit check
+        </h2>
+      </div>
+      <div className="fit-score">
+        <strong>{bestFit.confidence}%</strong>
+        <span>{bestFit.recommendation}</span>
+      </div>
+      <p>
+        {bestFit.name} stays under budget, matches over-ear preference, and has{" "}
+        {bestFit.returnRisk}% predicted return risk.
+      </p>
+      <button type="button">Compare with new</button>
+    </section>
   );
 }
 
