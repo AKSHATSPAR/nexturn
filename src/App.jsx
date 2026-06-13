@@ -262,6 +262,8 @@ function RouteCard({ route, isActive, onSelect }) {
   return (
     <button
       className={`route-card ${isActive ? "active" : ""}`}
+      data-testid={`route-${route.id}`}
+      aria-pressed={isActive}
       type="button"
       onClick={() => onSelect(route.id)}
     >
@@ -321,6 +323,8 @@ function RouteComparison({ routes, selectedRouteId, onSelect }) {
         {routes.map((route) => (
           <button
             className={`comparison-row ${route.id === selectedRouteId ? "selected" : ""}`}
+            data-testid={`comparison-${route.id}`}
+            aria-pressed={route.id === selectedRouteId}
             key={route.id}
             type="button"
             onClick={() => onSelect(route.id)}
