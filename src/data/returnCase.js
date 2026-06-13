@@ -15,6 +15,13 @@ export const returnCase = {
     email: "aarav@example.com",
     creditsBalance: 125,
     creditsValue: 12.5,
+    fitProfile: {
+      preferredUse: "daily commute",
+      comfortPriority: 92,
+      budgetCeiling: 140,
+      prefersOverEar: true,
+      sustainabilityPreference: 88,
+    },
   },
   item: {
     sku: "NT-HEADPHONES-QC45-BLK",
@@ -115,6 +122,9 @@ export const refurbishedAlternatives = [
     condition: "Great condition",
     label: "Certified refurbished",
     fit: 94,
+    returnRisk: 9,
+    comfortScore: 91,
+    sustainabilityScore: 82,
   },
   {
     id: "alt_silver",
@@ -124,6 +134,9 @@ export const refurbishedAlternatives = [
     condition: "Excellent condition",
     label: "Certified refurbished",
     fit: 91,
+    returnRisk: 17,
+    comfortScore: 88,
+    sustainabilityScore: 79,
   },
   {
     id: "alt_earbuds",
@@ -133,5 +146,8 @@ export const refurbishedAlternatives = [
     condition: "Like new",
     label: "Lower return risk",
     fit: 87,
+    returnRisk: 24,
+    comfortScore: 77,
+    sustainabilityScore: 92,
   },
 ];
