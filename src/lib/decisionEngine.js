@@ -107,7 +107,7 @@ export function buildRouteOptions(returnCase) {
       paymentTime: "Instant",
       convenience: "High",
       impact: "High",
-      score: 70 + scan.functionalScore * 0.15 + scan.hygieneScore * 0.1,
+      score: 58 + scan.functionalScore * 0.08 + scan.hygieneScore * 0.05,
       customerReason:
         "Meaningful when payout is less important than a verified donation receipt and social impact.",
       cta: "Donate item",
@@ -122,7 +122,7 @@ export function buildRouteOptions(returnCase) {
       paymentTime: "Instant",
       convenience: "High",
       impact: "Medium",
-      score: 55 + scan.fraudRisk * 0.5,
+      score: 42 + scan.fraudRisk * 0.5,
       customerReason:
         "Fallback route for damaged or low-trust items so materials are recovered instead of discarded.",
       cta: "Recycle item",
