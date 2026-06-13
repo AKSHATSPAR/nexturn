@@ -338,6 +338,253 @@ h1 {
   background: var(--green-soft);
 }
 
+.badge-neutral {
+  color: #46535e;
+  background: #eef2f0;
+}
+
+.workspace-page {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding-top: 28px;
+}
+
+.page-header {
+  max-width: 760px;
+  padding-top: 22px;
+}
+
+.page-header > span {
+  color: var(--green-deep);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.page-header h1 {
+  max-width: none;
+  margin-top: 8px;
+}
+
+.page-header p {
+  max-width: 680px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 8px;
+  min-height: 116px;
+  padding: 16px;
+}
+
+.metric-card span,
+.metric-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-card strong {
+  color: #15212b;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.action-panel,
+.list-panel,
+.table-panel,
+.route-impact-panel,
+.settings-panel {
+  padding: 16px;
+}
+
+.action-panel h2,
+.list-panel h2,
+.route-impact-panel h2,
+.settings-panel h2 {
+  margin-bottom: 14px;
+  font-size: 16px;
+}
+
+.action-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.action-panel button,
+.order-row {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  color: #1d2a34;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.action-panel button {
+  grid-template-columns: 1fr auto;
+  padding: 0 14px;
+  font-weight: 760;
+}
+
+.list-row,
+.credit-row,
+.message-row,
+.impact-row,
+.settings-row,
+.toggle-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.list-row:first-of-type,
+.credit-row:first-of-type,
+.message-row:first-of-type,
+.impact-row:first-of-type,
+.settings-row:first-of-type,
+.toggle-row:first-of-type {
+  border-top: 0;
+}
+
+.list-row {
+  grid-template-columns: 44px 1fr auto;
+}
+
+.list-row img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.list-row strong,
+.credit-row strong,
+.message-row strong,
+.impact-row strong,
+.settings-row strong {
+  display: block;
+  color: #17242e;
+  font-size: 13px;
+}
+
+.list-row small,
+.credit-row small,
+.message-row small,
+.impact-row small,
+.settings-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.list-row b,
+.credit-row b,
+.impact-row b,
+.toggle-row b {
+  color: var(--green-deep);
+  font-size: 13px;
+}
+
+.order-row {
+  grid-template-columns: minmax(240px, 1.4fr) 0.65fr auto 0.55fr 0.85fr;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 0;
+  border-inline: 0;
+  border-bottom: 0;
+}
+
+.order-row:first-child {
+  border-top: 0;
+}
+
+.order-row strong,
+.order-row small {
+  display: block;
+}
+
+.order-row small,
+.order-row span:nth-child(2),
+.order-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.order-row b {
+  color: #17242e;
+  font-size: 13px;
+}
+
+.route-impact-panel {
+  display: grid;
+}
+
+.impact-row {
+  grid-template-columns: 1fr auto auto;
+}
+
+.impact-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.credit-row,
+.settings-row,
+.toggle-row {
+  grid-template-columns: 1fr auto;
+}
+
+.message-row {
+  grid-template-columns: 28px 1fr;
+}
+
+.message-row svg {
+  color: var(--green);
+}
+
+.settings-panel {
+  display: grid;
+  gap: 2px;
+}
+
+.toggle-row b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 42px;
+  min-height: 26px;
+  background: var(--green-soft);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
 .studio-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
@@ -1040,6 +1287,10 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
   .right-rail {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -1076,7 +1327,17 @@ h1 {
   .connected-order,
   .analysis-grid,
   .route-grid,
+  .metric-grid,
   .right-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-page {
+    padding-top: 18px;
+  }
+
+  .order-row,
+  .impact-row {
     grid-template-columns: 1fr;
   }
 

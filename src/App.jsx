@@ -16,7 +16,7 @@ import {
   Repeat2,
   Recycle,
   Search,
-  Settings,
+  Settings as SettingsIcon,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -38,14 +38,53 @@ import { rankPurchaseFit } from "./lib/purchaseFit";
 import { lockRoute } from "./services/returnResolutionApi";
 
 const navItems = [
-  ["Home", Home],
-  ["Orders", ShoppingBag],
-  ["Returns hub", RefreshCcw],
-  ["Resale dashboard", Store],
-  ["Green impact", Leaf],
-  ["Credits wallet", WalletCards],
-  ["Messages", MessageCircle],
-  ["Settings", Settings],
+  { id: "home", label: "Home", Icon: Home },
+  { id: "orders", label: "Orders", Icon: ShoppingBag },
+  { id: "returns", label: "Returns hub", Icon: RefreshCcw },
+  { id: "resale", label: "Resale dashboard", Icon: Store },
+  { id: "impact", label: "Green impact", Icon: Leaf },
+  { id: "wallet", label: "Credits wallet", Icon: WalletCards },
+  { id: "messages", label: "Messages", Icon: MessageCircle },
+  { id: "settings", label: "Settings", Icon: SettingsIcon },
+];
+
+const orderHistory = [
+  {
+    id: returnCase.order.id,
+    title: returnCase.item.title,
+    status: "Return in review",
+    value: returnCase.order.subtotal,
+    date: returnCase.order.orderedOn,
+    action: "Open return",
+  },
+  {
+    id: "114-2231189-4501924",
+    title: "Ergo travel backpack",
+    status: "Delivered",
+    value: 74.99,
+    date: "May 03, 2026",
+    action: "Check resale value",
+  },
+  {
+    id: "113-4412039-7701182",
+    title: "Smart desk lamp",
+    status: "Exchange eligible",
+    value: 42.5,
+    date: "Apr 26, 2026",
+    action: "Compare fit",
+  },
+];
+
+const creditEvents = [
+  ["Route preview", "+4.50", "Resell route selected for headphones"],
+  ["Lower-risk purchase", "+2.00", "Chose refurbished item with 9% return risk"],
+  ["Donation impact", "+6.50", "Available if item is donated safely"],
+];
+
+const messages = [
+  ["Return scan complete", "AI-assisted grade is A- with high confidence."],
+  ["Buyer match ready", "Rahul S. can pay $98.00 with pickup nearby."],
+  ["Fit prevention alert", "QuietPlus Fold 45 is a 97% low-return match."],
 ];
 
 function Badge({ children, tone = "green" }) {
@@ -60,7 +99,7 @@ function StatusIcon({ tone = "green" }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ activeView, onNavigate }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -71,13 +110,14 @@ function Sidebar() {
       </div>
 
       <nav className="nav-list" aria-label="Primary navigation">
-        {navItems.map(([label, Icon], index) => (
+        {navItems.map(({ id, label, Icon }, index) => (
           <button
-            className={`nav-item ${label === "Returns hub" ? "active" : ""} ${
+            className={`nav-item ${activeView === id ? "active" : ""} ${
               index === 6 ? "nav-spaced" : ""
             }`}
             key={label}
             type="button"
+            onClick={() => onNavigate(id)}
           >
             <Icon size={18} strokeWidth={2.05} />
             <span>{label}</span>
@@ -91,7 +131,9 @@ function Sidebar() {
           <Leaf size={24} /> {returnCase.customer.creditsBalance}
         </strong>
         <small>~ {formatCurrency(returnCase.customer.creditsValue)} value</small>
-        <button type="button">View activity</button>
+        <button type="button" onClick={() => onNavigate("wallet")}>
+          View activity
+        </button>
       </div>
 
       <div className="profile-card">
@@ -106,7 +148,7 @@ function Sidebar() {
   );
 }
 
-function ConnectedOrder() {
+function ConnectedOrder({ onOpenOrders }) {
   return (
     <section className="connected-order" aria-label="Connected order">
       <div className="order-icon">
@@ -120,18 +162,18 @@ function ConnectedOrder() {
           {formatCurrency(returnCase.order.subtotal)}
         </span>
       </div>
-      <button type="button">
+      <button type="button" onClick={onOpenOrders}>
         View order <ExternalLink size={15} />
       </button>
     </section>
   );
 }
 
-function ReturnHeader() {
+function ReturnHeader({ onBack }) {
   return (
     <header className="return-header">
       <div>
-        <button className="back-link" type="button">
+        <button className="back-link" type="button" onClick={onBack}>
           <ArrowLeft size={16} /> Back to returns hub
         </button>
         <h1>{returnCase.item.title}</h1>
@@ -496,8 +538,340 @@ function ImpactBar({ decision, selectedRoute, syncState }) {
   );
 }
 
+function TopActions() {
+  return (
+    <div className="top-actions" aria-label="Notifications">
+      <Bell size={18} />
+      <CircleHelp size={18} />
+    </div>
+  );
+}
+
+function PageHeader({ eyebrow, title, description }) {
+  return (
+    <header className="page-header">
+      <span>{eyebrow}</span>
+      <h1>{title}</h1>
+      <p>{description}</p>
+    </header>
+  );
+}
+
+function MetricCard({ label, value, detail }) {
+  return (
+    <section className="panel metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </section>
+  );
+}
+
+function HomeView({ decision, onNavigate }) {
+  const bestFit = rankPurchaseFit(refurbishedAlternatives, returnCase.customer)[0];
+
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Customer command center"
+        title={`Welcome back, ${returnCase.customer.name.split(" ")[0]}`}
+        description="Your open return, second-life options, and low-return recommendations are ready."
+      />
+      <div className="metric-grid">
+        <MetricCard
+          label="Open return"
+          value={decision.recommended.shortLabel}
+          detail={`${decision.grade.grade} grade · ${decision.recommended.greenCredits.toFixed(2)} credits`}
+        />
+        <MetricCard
+          label="Best buyer offer"
+          value={formatCurrency(buyerMatches[0].offer)}
+          detail={`${buyerMatches[0].positiveRate}% positive nearby match`}
+        />
+        <MetricCard
+          label="Next purchase fit"
+          value={`${bestFit.confidence}%`}
+          detail={`${bestFit.name} · ${bestFit.returnRisk}% return risk`}
+        />
+      </div>
+      <div className="workspace-grid">
+        <section className="panel action-panel">
+          <h2>Priority actions</h2>
+          <button type="button" onClick={() => onNavigate("returns")}>
+            Resolve headphone return <ChevronRight size={16} />
+          </button>
+          <button type="button" onClick={() => onNavigate("resale")}>
+            Review buyer matches <ChevronRight size={16} />
+          </button>
+          <button type="button" onClick={() => onNavigate("wallet")}>
+            Open green credits wallet <ChevronRight size={16} />
+          </button>
+        </section>
+        <section className="panel list-panel">
+          <h2>Return prevention</h2>
+          {rankPurchaseFit(refurbishedAlternatives, returnCase.customer).map((item) => (
+            <div className="list-row" key={item.id}>
+              <img src={item.image} alt="" />
+              <span>
+                <strong>{item.name}</strong>
+                <small>{item.recommendation}</small>
+              </span>
+              <b>{item.confidence}%</b>
+            </div>
+          ))}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function OrdersView({ onNavigate }) {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Orders"
+        title="Connected purchases"
+        description="Recent orders with return, resale, and fit-prevention actions."
+      />
+      <section className="panel table-panel">
+        {orderHistory.map((order) => (
+          <button
+            className="order-row"
+            key={order.id}
+            type="button"
+            onClick={() => onNavigate(order.id === returnCase.order.id ? "returns" : "home")}
+          >
+            <span>
+              <strong>{order.title}</strong>
+              <small>Order # {order.id}</small>
+            </span>
+            <span>{order.date}</span>
+            <Badge tone={order.status === "Delivered" ? "neutral" : "green"}>
+              {order.status}
+            </Badge>
+            <b>{formatCurrency(order.value)}</b>
+            <em>{order.action}</em>
+          </button>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function ResaleDashboardView() {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Resale dashboard"
+        title="Second-life demand queue"
+        description="Buyer demand, trust status, and route readiness for usable returned items."
+      />
+      <div className="metric-grid">
+        <MetricCard label="Ready to resell" value="1 item" detail="A- grade · high confidence" />
+        <MetricCard label="Top offer" value={formatCurrency(buyerMatches[0].offer)} detail="2-3 day payout" />
+        <MetricCard label="Trust passport" value="Verified" detail="90-day warranty signal" />
+      </div>
+      <section className="panel list-panel">
+        <h2>Buyer matches</h2>
+        {buyerMatches.map((buyer) => (
+          <div className="list-row" key={buyer.id}>
+            <img src={buyer.avatar} alt="" />
+            <span>
+              <strong>{buyer.name}</strong>
+              <small>{buyer.reason}</small>
+            </span>
+            <b>{formatCurrency(buyer.offer)}</b>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function GreenImpactView({ decision }) {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Green impact"
+        title="Customer impact ledger"
+        description="A practical sustainability view tied to decisions the customer can actually make."
+      />
+      <div className="metric-grid">
+        <MetricCard label="CO2e avoided" value={`${decision.impact.emissionsKgSaved} kg`} detail="From resale route estimate" />
+        <MetricCard label="Waste avoided" value={`${decision.impact.landfillAvoidedGrams} g`} detail="Kept out of disposal" />
+        <MetricCard label="Match confidence" value={`${decision.impact.nextOwnerMatchRate}%`} detail="Demand-backed second life" />
+      </div>
+      <section className="panel route-impact-panel">
+        <h2>Impact by route</h2>
+        {decision.routes.map((route) => (
+          <div className="impact-row" key={route.id}>
+            <span>
+              <strong>{route.title}</strong>
+              <small>{route.customerReason}</small>
+            </span>
+            <b>{route.greenCredits.toFixed(2)} credits</b>
+            <em>{route.impact} impact</em>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function CreditsWalletView() {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Credits wallet"
+        title={`${returnCase.customer.creditsBalance} green credits`}
+        description={`Estimated value ${formatCurrency(returnCase.customer.creditsValue)} from verified lower-waste choices.`}
+      />
+      <section className="panel list-panel">
+        <h2>Recent credit activity</h2>
+        {creditEvents.map(([title, amount, detail]) => (
+          <div className="credit-row" key={title}>
+            <span>
+              <strong>{title}</strong>
+              <small>{detail}</small>
+            </span>
+            <b>{amount}</b>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function MessagesView() {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Messages"
+        title="Return updates"
+        description="Customer-facing status messages generated by the return resolution flow."
+      />
+      <section className="panel list-panel">
+        {messages.map(([title, detail]) => (
+          <div className="message-row" key={title}>
+            <MessageCircle size={18} />
+            <span>
+              <strong>{title}</strong>
+              <small>{detail}</small>
+            </span>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function SettingsView() {
+  return (
+    <main className="studio workspace-page">
+      <TopActions />
+      <PageHeader
+        eyebrow="Settings"
+        title="Trust and AI transparency"
+        description="Controls and model status for an explainable return-resolution prototype."
+      />
+      <div className="workspace-grid">
+        <section className="panel settings-panel">
+          <h2>AI status</h2>
+          <div className="settings-row">
+            <span>
+              <strong>Custom trained model</strong>
+              <small>Not trained for this prototype. The demo uses explainable scoring with AWS-ready adapters.</small>
+            </span>
+            <Badge tone="neutral">Prototype</Badge>
+          </div>
+          <div className="settings-row">
+            <span>
+              <strong>Quality signal source</strong>
+              <small>Seeded scan signals now; Rekognition-style image checks can feed the same engine.</small>
+            </span>
+            <Badge>Adapter ready</Badge>
+          </div>
+          <div className="settings-row">
+            <span>
+              <strong>Customer decision layer</strong>
+              <small>Deterministic route scoring keeps payout, trust, and impact explainable.</small>
+            </span>
+            <Badge>Active</Badge>
+          </div>
+        </section>
+        <section className="panel settings-panel">
+          <h2>Privacy controls</h2>
+          {["Use order history for fit scoring", "Store trust passport after route lock", "Allow green-credit ledger updates"].map((item) => (
+            <div className="toggle-row" key={item}>
+              <span>{item}</span>
+              <b>On</b>
+            </div>
+          ))}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function ReturnsView({
+  decision,
+  selectedRoute,
+  selectedRouteId,
+  scanStep,
+  setScanStep,
+  syncState,
+  onNavigate,
+  onRouteSelect,
+}) {
+  return (
+    <main className="studio">
+      <TopActions />
+      <ConnectedOrder onOpenOrders={() => onNavigate("orders")} />
+      <ReturnHeader onBack={() => onNavigate("home")} />
+
+      <div className="studio-grid">
+        <section className="primary-column">
+          <div className="analysis-grid">
+            <ReturnScan scanStep={scanStep} setScanStep={setScanStep} />
+            <div className="analysis-stack">
+              <GradePanel decision={decision} />
+              <SignalCards />
+            </div>
+          </div>
+
+          <NextBestAction
+            onSelect={onRouteSelect}
+            routes={decision.routes}
+            selectedRouteId={selectedRouteId}
+          />
+          <RouteComparison
+            onSelect={onRouteSelect}
+            routes={decision.routes}
+            selectedRouteId={selectedRouteId}
+          />
+        </section>
+
+        <MatchRail selectedRouteId={selectedRouteId} />
+      </div>
+
+      <ImpactBar
+        decision={decision}
+        selectedRoute={selectedRoute}
+        syncState={syncState}
+      />
+    </main>
+  );
+}
+
 export function App() {
   const decision = useMemo(() => summarizeDecision(returnCase), []);
+  const [activeView, setActiveView] = useState("returns");
   const [selectedRouteId, setSelectedRouteId] = useState(decision.recommended.id);
   const [scanStep, setScanStep] = useState(1);
   const [syncState, setSyncState] = useState({
@@ -529,46 +903,26 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
-      <main className="studio">
-        <div className="top-actions" aria-label="Notifications">
-          <Bell size={18} />
-          <CircleHelp size={18} />
-        </div>
-        <ConnectedOrder />
-        <ReturnHeader />
-
-        <div className="studio-grid">
-          <section className="primary-column">
-            <div className="analysis-grid">
-              <ReturnScan scanStep={scanStep} setScanStep={setScanStep} />
-              <div className="analysis-stack">
-                <GradePanel decision={decision} />
-                <SignalCards />
-              </div>
-            </div>
-
-            <NextBestAction
-              onSelect={handleRouteSelect}
-              routes={decision.routes}
-              selectedRouteId={selectedRouteId}
-            />
-            <RouteComparison
-              onSelect={handleRouteSelect}
-              routes={decision.routes}
-              selectedRouteId={selectedRouteId}
-            />
-          </section>
-
-          <MatchRail selectedRouteId={selectedRouteId} />
-        </div>
-
-        <ImpactBar
+      <Sidebar activeView={activeView} onNavigate={setActiveView} />
+      {activeView === "home" && <HomeView decision={decision} onNavigate={setActiveView} />}
+      {activeView === "orders" && <OrdersView onNavigate={setActiveView} />}
+      {activeView === "returns" && (
+        <ReturnsView
           decision={decision}
+          onNavigate={setActiveView}
+          onRouteSelect={handleRouteSelect}
+          scanStep={scanStep}
           selectedRoute={selectedRoute}
+          selectedRouteId={selectedRouteId}
+          setScanStep={setScanStep}
           syncState={syncState}
         />
-      </main>
+      )}
+      {activeView === "resale" && <ResaleDashboardView />}
+      {activeView === "impact" && <GreenImpactView decision={decision} />}
+      {activeView === "wallet" && <CreditsWalletView />}
+      {activeView === "messages" && <MessagesView />}
+      {activeView === "settings" && <SettingsView />}
     </div>
   );
 }
