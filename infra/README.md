@@ -18,8 +18,8 @@ npm run cdk:synth
 npm run cdk:deploy
 ```
 
-Both commands build the React app first because the stack deploys `dist/` into a
-private S3 bucket served through CloudFront.
+Both commands build the React app first because the stack bundles `dist/` into a
+small static-site Lambda served through the same HTTP API as the backend routes.
 
 After deployment, seed the demo data with the DynamoDB table name emitted by the
 stack:

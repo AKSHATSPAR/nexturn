@@ -1,7 +1,15 @@
-const apiBaseUrl = import.meta.env.VITE_NEXTURN_API_URL;
+const configuredApiBaseUrl = import.meta.env.VITE_NEXTURN_API_URL;
+
+function getApiBaseUrl() {
+  if (configuredApiBaseUrl) return configuredApiBaseUrl;
+  if (globalThis.location?.hostname?.includes("execute-api")) return "";
+  return null;
+}
 
 export async function lockRoute(routeId) {
-  if (!apiBaseUrl) {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl === null) {
     return {
       mode: "local",
       persisted: false,

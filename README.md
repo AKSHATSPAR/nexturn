@@ -24,7 +24,7 @@ best value. NexTurn turns the return moment into a guided customer decision:
   selection.
 - DynamoDB persistence path for scan evaluations, route decisions, trust passport
   updates, and credit ledger events.
-- AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, S3, CloudFront, and
+- AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, S3-ready media storage, and
   CloudWatch logs.
 - Generated product and profile assets for a realistic demo surface.
 
@@ -37,8 +37,8 @@ flowchart LR
   API --> Lambda["Return Resolution Lambda"]
   Lambda --> Engine["Decision engine"]
   Lambda --> DDB["DynamoDB NexTurnTable"]
-  Web --> CDN["CloudFront + S3 site"]
-  CDN --> Assets["Static assets"]
+  Web --> Site["HTTP API static site Lambda"]
+  Site --> Assets["Built React assets"]
   Lambda --> Logs["CloudWatch logs"]
   Engine --> Passport["Trust Passport + route ranking"]
 ```
@@ -70,8 +70,8 @@ npm run cdk:deploy
 ```
 
 The stack uses pay-per-request DynamoDB and a small ARM Lambda to stay
-free-tier-friendly for prototype traffic. The deployed stack outputs the API
-URL, CloudFront site URL, DynamoDB table name, and backing S3 bucket name.
+free-tier-friendly for prototype traffic. The deployed stack outputs the live
+site/API URL, DynamoDB table name, and backing S3 bucket name for future media.
 
 ## Key Files
 
