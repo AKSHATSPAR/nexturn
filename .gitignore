@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.npm-cache/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+*.log
+cdk.out/
+.aws-sam/
