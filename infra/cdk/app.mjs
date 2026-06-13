@@ -10,6 +10,7 @@ import {
 } from "aws-cdk-lib/aws-dynamodb";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Architecture, Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
@@ -62,6 +63,14 @@ class NexTurnStack extends Stack {
       ],
     });
 
+    const siteBucket = new Bucket(this, "SiteBucket", {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
     const apiHandler = new NodejsFunction(this, "ReturnResolutionHandler", {
       runtime: Runtime.NODEJS_22_X,
       architecture: Architecture.ARM_64,
@@ -76,11 +85,19 @@ class NexTurnStack extends Stack {
       memorySize: 256,
       environment: {
         NEX_TURN_TABLE_NAME: table.tableName,
+        NEX_TURN_MEDIA_BUCKET_NAME: siteBucket.bucketName,
         NODE_OPTIONS: "--enable-source-maps",
       },
     });
 
     table.grantReadWriteData(apiHandler);
+    siteBucket.grantWrite(apiHandler);
+    apiHandler.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["rekognition:DetectLabels"],
+        resources: ["*"],
+      }),
+    );
 
     const httpApi = new HttpApi(this, "NexTurnHttpApi", {
       apiName: "nexturn-return-resolution-api",
@@ -97,6 +114,13 @@ class NexTurnStack extends Stack {
       methods: [HttpMethod.GET],
       integration,
     });
+    for (const pathName of ["/orders", "/resale", "/wallet", "/messages", "/impact"]) {
+      httpApi.addRoutes({
+        path: pathName,
+        methods: [HttpMethod.GET],
+        integration,
+      });
+    }
     httpApi.addRoutes({
       path: "/scan/evaluate",
       methods: [HttpMethod.POST],
@@ -139,14 +163,6 @@ class NexTurnStack extends Stack {
       path: "/{proxy+}",
       methods: [HttpMethod.GET],
       integration: siteIntegration,
-    });
-
-    const siteBucket = new Bucket(this, "SiteBucket", {
-      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
-      encryption: BucketEncryption.S3_MANAGED,
-      enforceSSL: true,
-      removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
     });
 
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });

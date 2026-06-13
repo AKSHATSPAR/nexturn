@@ -25,6 +25,8 @@ test("scan fixture returns grade and ranked routes", async () => {
   assert.equal(body.grade.grade, "A-");
   assert.equal(body.recommendedRoute.id, "resell");
   assert.ok(body.routes.length >= 4);
+  assert.equal(body.aiAnalysis.provider, "rules-engine");
+  assert.equal(body.aiAnalysis.mode, "no-upload");
 });
 
 test("route fixture locks the selected route", async () => {
@@ -34,4 +36,25 @@ test("route fixture locks the selected route", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(body.selectedRoute.id, "resell");
   assert.equal(body.passport.lockedRoute, "Resell");
+});
+
+test("customer workspace endpoints return page data", async () => {
+  const endpoints = [
+    ["/orders", "orders"],
+    ["/resale", "buyerMatches"],
+    ["/wallet", "events"],
+    ["/messages", "messages"],
+    ["/impact", "impact"],
+  ];
+
+  for (const [rawPath, key] of endpoints) {
+    const response = await handler({
+      rawPath,
+      requestContext: { http: { method: "GET" } },
+    });
+    const body = JSON.parse(response.body);
+
+    assert.equal(response.statusCode, 200);
+    assert.ok(body[key]);
+  }
 });

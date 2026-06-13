@@ -9,6 +9,41 @@ const calls = [
     },
   },
   {
+    name: "fetch orders",
+    event: {
+      rawPath: "/orders",
+      requestContext: { http: { method: "GET" } },
+    },
+  },
+  {
+    name: "fetch resale queue",
+    event: {
+      rawPath: "/resale",
+      requestContext: { http: { method: "GET" } },
+    },
+  },
+  {
+    name: "fetch wallet",
+    event: {
+      rawPath: "/wallet",
+      requestContext: { http: { method: "GET" } },
+    },
+  },
+  {
+    name: "fetch messages",
+    event: {
+      rawPath: "/messages",
+      requestContext: { http: { method: "GET" } },
+    },
+  },
+  {
+    name: "fetch impact",
+    event: {
+      rawPath: "/impact",
+      requestContext: { http: { method: "GET" } },
+    },
+  },
+  {
     name: "evaluate scan",
     event: {
       rawPath: "/scan/evaluate",
@@ -40,6 +75,13 @@ for (const call of calls) {
   }
   console.log(
     `${call.name}: ${response.statusCode}`,
-    body.decision?.recommended?.id ?? body.recommendedRoute?.id ?? body.selectedRoute?.id,
+    body.decision?.recommended?.id ??
+      body.recommendedRoute?.id ??
+      body.selectedRoute?.id ??
+      body.orders?.length ??
+      body.buyerMatches?.length ??
+      body.events?.length ??
+      body.messages?.length ??
+      body.impact?.nextOwnerMatchRate,
   );
 }

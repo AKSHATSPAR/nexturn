@@ -151,3 +151,69 @@ export const refurbishedAlternatives = [
     sustainabilityScore: 92,
   },
 ];
+
+export const orderHistory = [
+  {
+    id: returnCase.order.id,
+    title: returnCase.item.title,
+    status: "Return in review",
+    value: returnCase.order.subtotal,
+    date: returnCase.order.orderedOn,
+    action: "Open return",
+  },
+  {
+    id: "114-2231189-4501924",
+    title: "Ergo travel backpack",
+    status: "Delivered",
+    value: 74.99,
+    date: "May 03, 2026",
+    action: "Check resale value",
+  },
+  {
+    id: "113-4412039-7701182",
+    title: "Smart desk lamp",
+    status: "Exchange eligible",
+    value: 42.5,
+    date: "Apr 26, 2026",
+    action: "Compare fit",
+  },
+];
+
+export const creditEvents = [
+  {
+    id: "credit_route_preview",
+    title: "Route preview",
+    amount: "+4.50",
+    detail: "Resell route selected for headphones",
+  },
+  {
+    id: "credit_fit_prevention",
+    title: "Lower-risk purchase",
+    amount: "+2.00",
+    detail: "Chose refurbished item with 9% return risk",
+  },
+  {
+    id: "credit_donation_impact",
+    title: "Donation impact",
+    amount: "+6.50",
+    detail: "Available if item is donated safely",
+  },
+];
+
+export const customerMessages = [
+  {
+    id: "message_scan_complete",
+    title: "Return scan complete",
+    detail: "AI-assisted grade is A- with high confidence.",
+  },
+  {
+    id: "message_buyer_ready",
+    title: "Buyer match ready",
+    detail: "Rahul S. can pay $98.00 with pickup nearby.",
+  },
+  {
+    id: "message_fit_alert",
+    title: "Fit prevention alert",
+    detail: "QuietPlus Fold 45 is a 97% low-return match.",
+  },
+];

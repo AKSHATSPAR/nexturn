@@ -1,5 +1,13 @@
-import { buyerMatches, refurbishedAlternatives, returnCase } from "../../src/data/returnCase.js";
+import {
+  buyerMatches,
+  creditEvents,
+  customerMessages,
+  orderHistory,
+  refurbishedAlternatives,
+  returnCase,
+} from "../../src/data/returnCase.js";
 import { summarizeDecision } from "../../src/lib/decisionEngine.js";
+import { analyzeReturnImage } from "../lib/aiImageAnalysis.js";
 import {
   saveRouteSelection,
   saveScanEvaluation,
@@ -34,12 +42,13 @@ function normalizePath(event) {
 }
 
 function createCasePayload(overrides = {}) {
+  const scan = {
+    ...returnCase.scan,
+    ...(overrides.scan ?? {}),
+  };
   const workingCase = {
     ...returnCase,
-    scan: {
-      ...returnCase.scan,
-      ...(overrides.scan ?? {}),
-    },
+    scan,
   };
   const decision = summarizeDecision(workingCase);
 
@@ -50,6 +59,15 @@ function createCasePayload(overrides = {}) {
     refurbishedAlternatives,
     generatedAt: new Date().toISOString(),
   };
+}
+
+function numberOrFallback(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mergeInspectionSignals(existingSignals, aiSignals) {
+  return [...new Set([...(existingSignals ?? []), ...(aiSignals ?? [])])];
 }
 
 async function selectRoute(routeId) {
@@ -82,30 +100,50 @@ async function selectRoute(routeId) {
 }
 
 async function evaluateScan(body) {
+  const { aiAnalysis, media } = await analyzeReturnImage({
+    returnCase,
+    imageBase64: body.imageBase64,
+    mimeType: body.mimeType,
+    fileName: body.fileName,
+  });
+  const inspectionSignals = mergeInspectionSignals(
+    returnCase.scan.inspectionSignals,
+    aiAnalysis.inspectionSignals,
+  );
   const payload = createCasePayload({
     scan: {
-      cosmeticWear: Number(body.cosmeticWear ?? returnCase.scan.cosmeticWear),
-      functionalScore: Number(body.functionalScore ?? returnCase.scan.functionalScore),
-      accessoryCompleteness: Number(
-        body.accessoryCompleteness ?? returnCase.scan.accessoryCompleteness,
+      imagesUploaded: body.imageBase64
+        ? returnCase.scan.imagesUploaded + 1
+        : returnCase.scan.imagesUploaded,
+      cosmeticWear: numberOrFallback(body.cosmeticWear, returnCase.scan.cosmeticWear),
+      functionalScore: numberOrFallback(body.functionalScore, returnCase.scan.functionalScore),
+      accessoryCompleteness: numberOrFallback(
+        body.accessoryCompleteness,
+        returnCase.scan.accessoryCompleteness,
       ),
-      hygieneScore: Number(body.hygieneScore ?? returnCase.scan.hygieneScore),
-      packagingScore: Number(body.packagingScore ?? returnCase.scan.packagingScore),
-      fraudRisk: Number(body.fraudRisk ?? returnCase.scan.fraudRisk),
-      demandScore: Number(body.demandScore ?? returnCase.scan.demandScore),
+      hygieneScore: numberOrFallback(body.hygieneScore, returnCase.scan.hygieneScore),
+      packagingScore: numberOrFallback(body.packagingScore, returnCase.scan.packagingScore),
+      fraudRisk: numberOrFallback(body.fraudRisk, returnCase.scan.fraudRisk),
+      demandScore: numberOrFallback(body.demandScore, returnCase.scan.demandScore),
+      inspectionSignals,
     },
   });
   const persistence = await saveScanEvaluation(
     payload.case,
     payload.decision.grade,
     payload.decision.recommended,
+    aiAnalysis,
+    media,
   );
 
   return json(200, {
+    case: payload.case,
     grade: payload.decision.grade,
     recommendedRoute: payload.decision.recommended,
     routes: payload.decision.routes,
     inspectionSignals: payload.case.scan.inspectionSignals,
+    aiAnalysis,
+    media,
     persistence,
   });
 }
@@ -122,6 +160,38 @@ export async function handler(event = {}) {
     return json(200, createCasePayload());
   }
 
+  if (method === "GET" && path.endsWith("/orders")) {
+    return json(200, { orders: orderHistory });
+  }
+
+  if (method === "GET" && path.endsWith("/resale")) {
+    return json(200, {
+      buyerMatches,
+      refurbishedAlternatives,
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (method === "GET" && path.endsWith("/wallet")) {
+    return json(200, {
+      balance: returnCase.customer.creditsBalance,
+      estimatedValue: returnCase.customer.creditsValue,
+      events: creditEvents,
+    });
+  }
+
+  if (method === "GET" && path.endsWith("/messages")) {
+    return json(200, { messages: customerMessages });
+  }
+
+  if (method === "GET" && path.endsWith("/impact")) {
+    const payload = createCasePayload();
+    return json(200, {
+      impact: payload.decision.impact,
+      routes: payload.decision.routes,
+    });
+  }
+
   if (method === "POST" && path.endsWith("/route")) {
     const body = parseBody(event);
     return selectRoute(body.routeId);
@@ -133,6 +203,15 @@ export async function handler(event = {}) {
 
   return json(404, {
     error: "Route not found",
-    routes: ["GET /case", "POST /route", "POST /scan/evaluate"],
+    routes: [
+      "GET /case",
+      "GET /orders",
+      "GET /resale",
+      "GET /wallet",
+      "GET /messages",
+      "GET /impact",
+      "POST /route",
+      "POST /scan/evaluate",
+    ],
   });
 }

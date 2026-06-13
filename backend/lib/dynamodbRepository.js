@@ -19,7 +19,13 @@ async function getDocumentClient() {
   return documentClientPromise;
 }
 
-export async function saveScanEvaluation(returnCase, grade, recommendedRoute) {
+export async function saveScanEvaluation(
+  returnCase,
+  grade,
+  recommendedRoute,
+  aiAnalysis,
+  media,
+) {
   const client = await getDocumentClient();
   if (!client) {
     return { mode: "seed", persisted: false };
@@ -42,6 +48,8 @@ export async function saveScanEvaluation(returnCase, grade, recommendedRoute) {
         gradeScore: grade.score,
         recommendedRoute: recommendedRoute.id,
         scan: returnCase.scan,
+        aiAnalysis,
+        media,
         updatedAt: now,
       },
     }),

@@ -20,14 +20,16 @@ best value. NexTurn turns the return moment into a guided customer decision:
 
 - Return Resolution Studio UI built with React + Vite.
 - Deterministic decision engine for grade, route ranking, and green-credit logic.
-- AI transparency view that explains the prototype uses explainable scoring now,
-  with an AWS AI signal-adapter path rather than a rushed custom-trained model.
-- Lambda-compatible API with endpoints for case fetch, scan evaluation, and route
-  selection.
+- Real upload flow: customer return photos are sent to the backend, stored in S3,
+  analyzed with Amazon Rekognition `DetectLabels`, and surfaced as AI evidence.
+- AI transparency view that explains there is no rushed custom-trained model; AWS
+  AI provides visual signals and the final customer decision remains explainable.
+- Lambda-compatible API with endpoints for case fetch, workspace pages, scan
+  evaluation, and route selection.
 - DynamoDB persistence path for scan evaluations, route decisions, trust passport
   updates, and credit ledger events.
-- AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, S3-ready media storage, and
-  CloudWatch logs.
+- AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, private S3 media storage,
+  Rekognition permissions, and CloudWatch logs.
 - Generated product and profile assets for a realistic demo surface.
 
 ## Architecture
@@ -37,6 +39,8 @@ flowchart LR
   Customer["Customer browser"] --> Web["React NexTurn app"]
   Web --> API["HTTP API Gateway"]
   API --> Lambda["Return Resolution Lambda"]
+  Lambda --> Rekognition["Amazon Rekognition"]
+  Lambda --> S3["Private S3 media bucket"]
   Lambda --> Engine["Decision engine"]
   Lambda --> DDB["DynamoDB NexTurnTable"]
   Web --> Site["HTTP API static site Lambda"]
@@ -77,13 +81,15 @@ npm run cdk:deploy
 
 The stack uses pay-per-request DynamoDB and a small ARM Lambda to stay
 free-tier-friendly for prototype traffic. The deployed stack outputs the live
-site/API URL, DynamoDB table name, and backing S3 bucket name for future media.
+site/API URL, DynamoDB table name, and backing S3 bucket name for uploaded scan
+media.
 
 ## Key Files
 
 - `src/lib/decisionEngine.js` - grading, route ranking, and impact logic.
 - `src/data/returnCase.js` - realistic seeded return scenario.
 - `backend/lambda/returnResolution.js` - Lambda-compatible API handler.
+- `backend/lib/aiImageAnalysis.js` - S3 upload and Amazon Rekognition analysis.
 - `backend/lib/dynamodbRepository.js` - DynamoDB persistence adapter.
 - `infra/cdk/app.mjs` - AWS CDK stack.
 - `docs/architecture/` - DynamoDB model and access patterns.

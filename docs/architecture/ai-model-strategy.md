@@ -3,13 +3,23 @@
 ## Current Prototype
 
 NexTurn does not train a custom machine-learning model in this prototype. That
-is intentional for a one-week contest: a trustworthy returns model would need
+is intentional for a two-to-three-week contest: a trustworthy returns model would need
 large, labeled image/video datasets across categories, brands, defect types,
 fraud patterns, refurb outcomes, resale prices, and post-resale customer
 feedback.
 
-Instead, the current build uses an explainable decision engine that behaves like
-the customer-facing policy layer of an AI system:
+Instead, the current build uses AWS AI where it is practical and keeps the final
+customer decision explainable:
+
+- uploaded return photos are posted to `POST /scan/evaluate`;
+- the Lambda stores the image in a private S3 bucket when deployed;
+- Amazon Rekognition `DetectLabels` analyzes the uploaded image;
+- returned labels and confidence scores are shown in the UI as AI evidence;
+- the condition grade and route ranking remain deterministic so payout and
+  sustainability decisions are auditable.
+
+The decision engine behaves like the customer-facing policy layer of an AI
+system:
 
 - scan signals: cosmetic wear, function score, accessories, hygiene, packaging,
   demand, price retention, and fraud risk;
@@ -21,25 +31,34 @@ the customer-facing policy layer of an AI system:
 
 This makes the demo deterministic, testable, and safe for judges to repeat.
 
-## AWS AI Path
+## AWS AI Path Implemented
 
-The production path is to feed the same engine with AWS AI-derived signals:
+The implemented path already feeds the same engine with AWS AI-derived signals:
 
-1. Store uploaded return images/videos in S3.
-2. Use image/video analysis to detect visible product condition, missing
-   accessories, packaging state, and label mismatch.
-3. Use Bedrock-style summarization for customer-readable explanations, while
-   keeping final route scoring deterministic and auditable.
-4. Persist extracted signals, grade, route decision, Trust Passport, and green
-   credit events in DynamoDB.
+1. Store uploaded return images in S3.
+2. Use Rekognition image analysis to detect product/category/scene labels.
+3. Add those labels to the scan evidence shown to the customer.
+4. Persist extracted signals, grade, route decision, media metadata, Trust
+   Passport, and green-credit events in DynamoDB.
+
+## Why Keep the Rule Layer
+
+Rekognition is useful for visual evidence, but it should not independently
+decide a customer's payout or sustainability reward. NexTurn keeps the final
+route scoring deterministic because customers and sellers need repeatable
+reasons for grade, payout, exchange, donation, and recycling choices.
+
+Later iterations can add Bedrock-style summarization for customer-readable
+explanations while keeping final route scoring deterministic and auditable.
 
 ## Why Not Train From Scratch Now
 
-Training a real model in one week would risk overfitting to a tiny toy dataset
-and make the product less credible. A better hackathon-grade implementation is:
+Training a real model during a short hackathon would risk overfitting to a tiny
+toy dataset and make the product less credible. A better hackathon-grade
+implementation is:
 
 - working customer journey now;
-- AWS-ready AI signal adapter boundary;
+- actual AWS AI calls for uploaded images;
 - transparent scoring and tests;
 - future training plan once real labeled return outcomes exist.
 
