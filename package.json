@@ -10,8 +10,8 @@
     "test": "node --test tests/*.test.mjs",
     "smoke:api": "node scripts/smoke-api.mjs",
     "seed:ddb": "node scripts/seed-dynamodb.mjs",
-    "cdk:synth": "cdk synth",
-    "cdk:deploy": "cdk deploy --require-approval never"
+    "cdk:synth": "npm run build && cdk synth",
+    "cdk:deploy": "npm run build && cdk deploy --require-approval never"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1068.0",

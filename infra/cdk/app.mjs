@@ -10,9 +10,16 @@ import {
 } from "aws-cdk-lib/aws-dynamodb";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import {
+  Distribution,
+  PriceClass,
+  ViewerProtocolPolicy,
+} from "aws-cdk-lib/aws-cloudfront";
+import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { Architecture, Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 
 const cdkDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(cdkDir, "../..");
@@ -116,7 +123,43 @@ class NexTurnStack extends Stack {
       autoDeleteObjects: true,
     });
 
+    const siteDistribution = new Distribution(this, "SiteDistribution", {
+      defaultRootObject: "index.html",
+      priceClass: PriceClass.PRICE_CLASS_100,
+      defaultBehavior: {
+        origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
+        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      },
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: "/index.html",
+          ttl: Duration.minutes(1),
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: "/index.html",
+          ttl: Duration.minutes(1),
+        },
+      ],
+    });
+
+    new BucketDeployment(this, "DeploySite", {
+      sources: [Source.asset(path.join(rootDir, "dist"))],
+      destinationBucket: siteBucket,
+      distribution: siteDistribution,
+      distributionPaths: ["/*"],
+    });
+
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
+    new CfnOutput(this, "CloudFrontDomain", {
+      value: siteDistribution.distributionDomainName,
+    });
+    new CfnOutput(this, "SiteUrl", {
+      value: `https://${siteDistribution.distributionDomainName}`,
+    });
     new CfnOutput(this, "TableName", { value: table.tableName });
     new CfnOutput(this, "SiteBucketName", { value: siteBucket.bucketName });
   }
