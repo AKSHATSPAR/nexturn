@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    name: Verify prototype
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run decision tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Smoke test API handler
+        run: npm run smoke:api
+
+      - name: Synthesize AWS stack
+        run: npm run cdk:synth
