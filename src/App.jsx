@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleHelp,
   ClipboardCheck,
@@ -23,19 +24,19 @@ import {
   Store,
   Upload,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   buyerMatches,
+  creditEvents,
+  customerMessages,
+  orderHistory,
   refurbishedAlternatives,
   returnCase,
 } from "./data/returnCase";
-import {
-  buildRouteOptions,
-  formatCurrency,
-  summarizeDecision,
-} from "./lib/decisionEngine";
+import { formatCurrency, summarizeDecision } from "./lib/decisionEngine";
 import { rankPurchaseFit } from "./lib/purchaseFit";
-import { lockRoute } from "./services/returnResolutionApi";
+import { evaluateScanUpload, lockRoute } from "./services/returnResolutionApi";
 
 const navItems = [
   { id: "home", label: "Home", Icon: Home },
@@ -46,45 +47,6 @@ const navItems = [
   { id: "wallet", label: "Credits wallet", Icon: WalletCards },
   { id: "messages", label: "Messages", Icon: MessageCircle },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
-];
-
-const orderHistory = [
-  {
-    id: returnCase.order.id,
-    title: returnCase.item.title,
-    status: "Return in review",
-    value: returnCase.order.subtotal,
-    date: returnCase.order.orderedOn,
-    action: "Open return",
-  },
-  {
-    id: "114-2231189-4501924",
-    title: "Ergo travel backpack",
-    status: "Delivered",
-    value: 74.99,
-    date: "May 03, 2026",
-    action: "Check resale value",
-  },
-  {
-    id: "113-4412039-7701182",
-    title: "Smart desk lamp",
-    status: "Exchange eligible",
-    value: 42.5,
-    date: "Apr 26, 2026",
-    action: "Compare fit",
-  },
-];
-
-const creditEvents = [
-  ["Route preview", "+4.50", "Resell route selected for headphones"],
-  ["Lower-risk purchase", "+2.00", "Chose refurbished item with 9% return risk"],
-  ["Donation impact", "+6.50", "Available if item is donated safely"],
-];
-
-const messages = [
-  ["Return scan complete", "AI-assisted grade is A- with high confidence."],
-  ["Buyer match ready", "Rahul S. can pay $98.00 with pickup nearby."],
-  ["Fit prevention alert", "QuietPlus Fold 45 is a 97% low-return match."],
 ];
 
 function Badge({ children, tone = "green" }) {
@@ -99,14 +61,30 @@ function StatusIcon({ tone = "green" }) {
   );
 }
 
-function Sidebar({ activeView, onNavigate }) {
+function Sidebar({
+  activeView,
+  collapsed,
+  onNavigate,
+  onOpenProfile,
+  onToggleCollapse,
+}) {
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">
-          <Recycle size={22} strokeWidth={2.7} />
+      <div className="sidebar-header">
+        <div className="brand">
+          <div className="brand-mark">
+            <Recycle size={22} strokeWidth={2.7} />
+          </div>
+          <span>NexTurn</span>
         </div>
-        <span>NexTurn</span>
+        <button
+          className="sidebar-toggle"
+          type="button"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={onToggleCollapse}
+        >
+          {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
+        </button>
       </div>
 
       <nav className="nav-list" aria-label="Primary navigation">
@@ -116,6 +94,7 @@ function Sidebar({ activeView, onNavigate }) {
               index === 6 ? "nav-spaced" : ""
             }`}
             key={label}
+            title={collapsed ? label : undefined}
             type="button"
             onClick={() => onNavigate(id)}
           >
@@ -136,14 +115,19 @@ function Sidebar({ activeView, onNavigate }) {
         </button>
       </div>
 
-      <div className="profile-card">
+      <button
+        className="profile-card"
+        type="button"
+        aria-label={`Open profile for ${returnCase.customer.name}`}
+        onClick={onOpenProfile}
+      >
         <img src="/assets/avatars/buyer-rahul.png" alt="" />
         <div>
           <strong>{returnCase.customer.name}</strong>
           <span>{returnCase.customer.email}</span>
         </div>
         <ChevronRight size={17} />
-      </div>
+      </button>
     </aside>
   );
 }
@@ -169,7 +153,7 @@ function ConnectedOrder({ onOpenOrders }) {
   );
 }
 
-function ReturnHeader({ onBack }) {
+function ReturnHeader({ onBack, onExplainWindow }) {
   return (
     <header className="return-header">
       <div>
@@ -184,46 +168,81 @@ function ReturnHeader({ onBack }) {
       </div>
       <div className="return-status">
         <Badge>{returnCase.status}</Badge>
-        <span>
+        <button className="inline-help" type="button" onClick={onExplainWindow}>
           Return window closes in {returnCase.returnWindowDays} days{" "}
           <CircleHelp size={15} />
-        </span>
+        </button>
       </div>
     </header>
   );
 }
 
-function ReturnScan({ scanStep, setScanStep }) {
+function ReturnScan({
+  activeCase,
+  selectedImage,
+  scanStep,
+  setScanStep,
+  onImageSelect,
+  onUpload,
+  uploadState,
+}) {
+  const fileInputRef = useRef(null);
   const steps = ["Received", "Scanning", "Review", "Passport"];
+
+  function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    if (file) onUpload(file);
+    event.target.value = "";
+  }
 
   return (
     <section className="panel scan-panel">
       <div className="panel-heading">
         <h2>Return scan</h2>
-        <button type="button">
-          <Upload size={16} /> Upload
+        <button
+          type="button"
+          disabled={uploadState.status === "syncing"}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload size={16} />
+          {uploadState.status === "syncing" ? "Analyzing" : "Upload"}
         </button>
+        <input
+          ref={fileInputRef}
+          className="scan-upload-input"
+          type="file"
+          accept="image/png,image/jpeg"
+          onChange={handleFileChange}
+        />
       </div>
 
       <div className="product-frame">
-        <img src={returnCase.item.image} alt={returnCase.item.title} />
+        <img src={selectedImage} alt={activeCase.item.title} />
       </div>
 
       <div className="thumb-row">
-        {returnCase.item.gallery.map((image, index) => (
+        {activeCase.item.gallery.map((image, index) => (
           <button
-            className={index === 0 ? "selected" : ""}
+            className={selectedImage === image ? "selected" : ""}
             key={image}
             type="button"
-            onClick={() => setScanStep(Math.min(steps.length - 1, index + 1))}
+            onClick={() => {
+              onImageSelect(image);
+              setScanStep(Math.min(steps.length - 1, index + 1));
+            }}
           >
             <img src={image} alt="" />
           </button>
         ))}
         <button type="button" onClick={() => setScanStep(2)}>
-          <img src={returnCase.item.image} alt="" />
+          <img src={activeCase.item.image} alt="" />
           <span className="play-dot">0:18</span>
         </button>
+      </div>
+
+      <div className="upload-state" data-state={uploadState.status}>
+        <strong>{uploadState.title}</strong>
+        <span>{uploadState.message}</span>
       </div>
 
       <div className="scan-timeline" aria-label="Scan progress">
@@ -243,12 +262,15 @@ function ReturnScan({ scanStep, setScanStep }) {
   );
 }
 
-function GradePanel({ decision }) {
+function GradePanel({ decision, onExplainAi }) {
   return (
     <section className="panel grade-panel">
       <div className="panel-heading">
         <h2>
-          AI condition grade <CircleHelp size={15} />
+          AI condition grade
+          <button className="mini-icon-button" type="button" onClick={onExplainAi}>
+            <CircleHelp size={15} />
+          </button>
         </h2>
         <Badge>{decision.grade.confidence}</Badge>
       </div>
@@ -265,13 +287,50 @@ function GradePanel({ decision }) {
         <span>B</span>
         <span>A</span>
         <span>A+</span>
-        <b style={{ left: `${decision.grade.score - 8}%` }}>{decision.grade.grade}</b>
+        <b style={{ left: `${Math.max(6, Math.min(94, decision.grade.score - 8))}%` }}>
+          {decision.grade.grade}
+        </b>
       </div>
     </section>
   );
 }
 
-function SignalCards() {
+function AiAnalysisPanel({ aiAnalysis, media }) {
+  const isLive = aiAnalysis?.usedAws;
+  const labels = aiAnalysis?.labels ?? [];
+
+  return (
+    <section className="panel ai-panel">
+      <div className="panel-heading">
+        <h2>
+          <Sparkles size={17} /> AI evidence
+        </h2>
+        <Badge tone={isLive ? "green" : "neutral"}>
+          {isLive ? "AWS AI live" : aiAnalysis?.mode ?? "Ready"}
+        </Badge>
+      </div>
+      <p>{aiAnalysis?.summary ?? "Upload a return photo to run AWS Rekognition."}</p>
+      {labels.length > 0 && (
+        <div className="label-chips" aria-label="Detected image labels">
+          {labels.slice(0, 6).map((label) => (
+            <span key={`${label.name}-${label.confidence}`}>
+              {label.name} {Math.round(label.confidence)}%
+            </span>
+          ))}
+        </div>
+      )}
+      <small>
+        {media?.persisted
+          ? `Image stored in S3 object ${media.objectKey}`
+          : media?.message ?? "No scan image has been persisted yet."}
+      </small>
+    </section>
+  );
+}
+
+function SignalCards({ scan }) {
+  const visibleSignals = scan.inspectionSignals.slice(0, 4);
+
   return (
     <div className="signal-grid">
       <section className="panel mini-panel">
@@ -279,11 +338,13 @@ function SignalCards() {
         <p>
           <StatusIcon /> No major defects found
         </p>
-        <span>Very light wear on ear cushions.</span>
+        {visibleSignals.slice(0, 2).map((signal) => (
+          <span key={signal}>{signal}</span>
+        ))}
       </section>
       <section className="panel mini-panel">
         <h3>Accessories</h3>
-        <p>3 of 3 included</p>
+        <p>{scan.accessoryCompleteness === 100 ? "3 of 3 included" : "Needs check"}</p>
         {["USB-C charging cable", "Audio cable", "Carrying case"].map((item) => (
           <span className="check-row" key={item}>
             <StatusIcon /> {item}
@@ -294,7 +355,7 @@ function SignalCards() {
   );
 }
 
-function RouteCard({ route, isActive, onSelect }) {
+function RouteCard({ route, isActive, onSelect, onOpenDetails }) {
   const iconMap = {
     resell: Leaf,
     exchange: Repeat2,
@@ -309,7 +370,10 @@ function RouteCard({ route, isActive, onSelect }) {
       data-testid={`route-${route.id}`}
       aria-pressed={isActive}
       type="button"
-      onClick={() => onSelect(route.id)}
+      onClick={() => {
+        onSelect(route.id);
+        onOpenDetails(route);
+      }}
     >
       <div className="route-title">
         <span>
@@ -329,7 +393,7 @@ function RouteCard({ route, isActive, onSelect }) {
   );
 }
 
-function NextBestAction({ routes, selectedRouteId, onSelect }) {
+function NextBestAction({ routes, selectedRouteId, onSelect, onOpenRoute }) {
   return (
     <section className="panel next-action">
       <div className="panel-heading">
@@ -342,6 +406,7 @@ function NextBestAction({ routes, selectedRouteId, onSelect }) {
           <RouteCard
             isActive={route.id === selectedRouteId}
             key={route.id}
+            onOpenDetails={onOpenRoute}
             onSelect={onSelect}
             route={route}
           />
@@ -351,7 +416,7 @@ function NextBestAction({ routes, selectedRouteId, onSelect }) {
   );
 }
 
-function RouteComparison({ routes, selectedRouteId, onSelect }) {
+function RouteComparison({ routes, selectedRouteId, onSelect, onOpenRoute }) {
   return (
     <section className="panel comparison">
       <h2>Route comparison</h2>
@@ -371,7 +436,10 @@ function RouteComparison({ routes, selectedRouteId, onSelect }) {
             aria-pressed={route.id === selectedRouteId}
             key={route.id}
             type="button"
-            onClick={() => onSelect(route.id)}
+            onClick={() => {
+              onSelect(route.id);
+              onOpenRoute(route);
+            }}
           >
             <span>
               <i /> {route.title}
@@ -392,7 +460,15 @@ function RouteComparison({ routes, selectedRouteId, onSelect }) {
   );
 }
 
-function MatchRail({ selectedRouteId }) {
+function MatchRail({
+  decision,
+  selectedRouteId,
+  onCompare,
+  onOpenAlternative,
+  onOpenBuyer,
+  onOpenBuyerList,
+  onOpenPassport,
+}) {
   const fitRanking = rankPurchaseFit(refurbishedAlternatives, returnCase.customer);
 
   return (
@@ -404,8 +480,13 @@ function MatchRail({ selectedRouteId }) {
           </h2>
         </div>
         <div className="match-list">
-          {buyerMatches.map((buyer, index) => (
-            <button className={index === 0 ? "selected" : ""} key={buyer.id} type="button">
+          {buyerMatches.slice(0, 3).map((buyer, index) => (
+            <button
+              className={index === 0 ? "selected" : ""}
+              key={buyer.id}
+              type="button"
+              onClick={() => onOpenBuyer(buyer)}
+            >
               <img src={buyer.avatar} alt="" />
               <span>
                 <strong>{buyer.name}</strong>
@@ -422,7 +503,7 @@ function MatchRail({ selectedRouteId }) {
             </button>
           ))}
         </div>
-        <button className="text-button" type="button">
+        <button className="text-button" type="button" onClick={onOpenBuyerList}>
           View more buyers (8+) <ChevronDown size={15} />
         </button>
       </section>
@@ -434,7 +515,12 @@ function MatchRail({ selectedRouteId }) {
           </h2>
         </div>
         {refurbishedAlternatives.map((item) => (
-          <button className="alternative-row" key={item.id} type="button">
+          <button
+            className="alternative-row"
+            key={item.id}
+            type="button"
+            onClick={() => onOpenAlternative(item)}
+          >
             <img src={item.image} alt="" />
             <span>
               <strong>{item.name}</strong>
@@ -447,19 +533,27 @@ function MatchRail({ selectedRouteId }) {
             <ChevronRight size={16} />
           </button>
         ))}
-        <button className="text-button" type="button">
+        <button
+          className="text-button"
+          type="button"
+          onClick={() => onOpenAlternative(refurbishedAlternatives[0])}
+        >
           View more alternatives <ChevronRight size={15} />
         </button>
       </section>
 
-      <PurchaseFitPanel fitRanking={fitRanking} />
+      <PurchaseFitPanel fitRanking={fitRanking} onCompare={onCompare} />
 
-      <TrustPassport selectedRouteId={selectedRouteId} />
+      <TrustPassport
+        decision={decision}
+        onOpenPassport={onOpenPassport}
+        selectedRouteId={selectedRouteId}
+      />
     </aside>
   );
 }
 
-function PurchaseFitPanel({ fitRanking }) {
+function PurchaseFitPanel({ fitRanking, onCompare }) {
   const bestFit = fitRanking[0];
 
   return (
@@ -477,16 +571,16 @@ function PurchaseFitPanel({ fitRanking }) {
         {bestFit.name} stays under budget, matches over-ear preference, and has{" "}
         {bestFit.returnRisk}% predicted return risk.
       </p>
-      <button type="button">Compare with new</button>
+      <button type="button" onClick={onCompare}>
+        Compare with new
+      </button>
     </section>
   );
 }
 
-function TrustPassport({ selectedRouteId }) {
-  const decision = summarizeDecision(returnCase);
+function TrustPassport({ decision, selectedRouteId, onOpenPassport }) {
   const activeRoute =
-    buildRouteOptions(returnCase).find((route) => route.id === selectedRouteId) ??
-    decision.recommended;
+    decision.routes.find((route) => route.id === selectedRouteId) ?? decision.recommended;
 
   return (
     <section className="panel passport-panel">
@@ -512,7 +606,7 @@ function TrustPassport({ selectedRouteId }) {
       </div>
       <footer>
         <span>ID: {returnCase.trustPassport.id}</span>
-        <button type="button">
+        <button type="button" onClick={onOpenPassport}>
           View details <ExternalLink size={14} />
         </button>
       </footer>
@@ -538,11 +632,18 @@ function ImpactBar({ decision, selectedRoute, syncState }) {
   );
 }
 
-function TopActions() {
+function TopActions({ onNavigate, onOpenHelp, onOpenNotifications }) {
   return (
-    <div className="top-actions" aria-label="Notifications">
-      <Bell size={18} />
-      <CircleHelp size={18} />
+    <div className="top-actions" aria-label="Notifications and help">
+      <button type="button" aria-label="Open messages" onClick={onOpenNotifications}>
+        <Bell size={18} />
+      </button>
+      <button type="button" aria-label="Open AI help" onClick={onOpenHelp}>
+        <CircleHelp size={18} />
+      </button>
+      <button type="button" aria-label="Open settings" onClick={() => onNavigate("settings")}>
+        <SettingsIcon size={18} />
+      </button>
     </div>
   );
 }
@@ -567,12 +668,17 @@ function MetricCard({ label, value, detail }) {
   );
 }
 
-function HomeView({ decision, onNavigate }) {
-  const bestFit = rankPurchaseFit(refurbishedAlternatives, returnCase.customer)[0];
+function HomeView({ decision, onNavigate, onOpenAlternative, onOpenHelp, onOpenNotifications }) {
+  const fitRanking = rankPurchaseFit(refurbishedAlternatives, returnCase.customer);
+  const bestFit = fitRanking[0];
 
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Customer command center"
         title={`Welcome back, ${returnCase.customer.name.split(" ")[0]}`}
@@ -610,15 +716,20 @@ function HomeView({ decision, onNavigate }) {
         </section>
         <section className="panel list-panel">
           <h2>Return prevention</h2>
-          {rankPurchaseFit(refurbishedAlternatives, returnCase.customer).map((item) => (
-            <div className="list-row" key={item.id}>
+          {fitRanking.map((item) => (
+            <button
+              className="list-row list-row-button"
+              key={item.id}
+              type="button"
+              onClick={() => onOpenAlternative(item)}
+            >
               <img src={item.image} alt="" />
               <span>
                 <strong>{item.name}</strong>
                 <small>{item.recommendation}</small>
               </span>
               <b>{item.confidence}%</b>
-            </div>
+            </button>
           ))}
         </section>
       </div>
@@ -626,10 +737,14 @@ function HomeView({ decision, onNavigate }) {
   );
 }
 
-function OrdersView({ onNavigate }) {
+function OrdersView({ onNavigate, onOpenOrder, onOpenHelp, onOpenNotifications }) {
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Orders"
         title="Connected purchases"
@@ -641,7 +756,13 @@ function OrdersView({ onNavigate }) {
             className="order-row"
             key={order.id}
             type="button"
-            onClick={() => onNavigate(order.id === returnCase.order.id ? "returns" : "home")}
+            onClick={() => {
+              if (order.id === returnCase.order.id) {
+                onNavigate("returns");
+              } else {
+                onOpenOrder(order);
+              }
+            }}
           >
             <span>
               <strong>{order.title}</strong>
@@ -660,10 +781,19 @@ function OrdersView({ onNavigate }) {
   );
 }
 
-function ResaleDashboardView() {
+function ResaleDashboardView({
+  onNavigate,
+  onOpenBuyer,
+  onOpenHelp,
+  onOpenNotifications,
+}) {
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Resale dashboard"
         title="Second-life demand queue"
@@ -671,61 +801,101 @@ function ResaleDashboardView() {
       />
       <div className="metric-grid">
         <MetricCard label="Ready to resell" value="1 item" detail="A- grade · high confidence" />
-        <MetricCard label="Top offer" value={formatCurrency(buyerMatches[0].offer)} detail="2-3 day payout" />
+        <MetricCard
+          label="Top offer"
+          value={formatCurrency(buyerMatches[0].offer)}
+          detail="2-3 day payout"
+        />
         <MetricCard label="Trust passport" value="Verified" detail="90-day warranty signal" />
       </div>
       <section className="panel list-panel">
         <h2>Buyer matches</h2>
         {buyerMatches.map((buyer) => (
-          <div className="list-row" key={buyer.id}>
+          <button
+            className="list-row list-row-button"
+            key={buyer.id}
+            type="button"
+            onClick={() => onOpenBuyer(buyer)}
+          >
             <img src={buyer.avatar} alt="" />
             <span>
               <strong>{buyer.name}</strong>
               <small>{buyer.reason}</small>
             </span>
             <b>{formatCurrency(buyer.offer)}</b>
-          </div>
+          </button>
         ))}
       </section>
     </main>
   );
 }
 
-function GreenImpactView({ decision }) {
+function GreenImpactView({
+  decision,
+  onNavigate,
+  onOpenHelp,
+  onOpenNotifications,
+  onOpenRoute,
+}) {
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Green impact"
         title="Customer impact ledger"
         description="A practical sustainability view tied to decisions the customer can actually make."
       />
       <div className="metric-grid">
-        <MetricCard label="CO2e avoided" value={`${decision.impact.emissionsKgSaved} kg`} detail="From resale route estimate" />
-        <MetricCard label="Waste avoided" value={`${decision.impact.landfillAvoidedGrams} g`} detail="Kept out of disposal" />
-        <MetricCard label="Match confidence" value={`${decision.impact.nextOwnerMatchRate}%`} detail="Demand-backed second life" />
+        <MetricCard
+          label="CO2e avoided"
+          value={`${decision.impact.emissionsKgSaved} kg`}
+          detail="From resale route estimate"
+        />
+        <MetricCard
+          label="Waste avoided"
+          value={`${decision.impact.landfillAvoidedGrams} g`}
+          detail="Kept out of disposal"
+        />
+        <MetricCard
+          label="Match confidence"
+          value={`${decision.impact.nextOwnerMatchRate}%`}
+          detail="Demand-backed second life"
+        />
       </div>
       <section className="panel route-impact-panel">
         <h2>Impact by route</h2>
         {decision.routes.map((route) => (
-          <div className="impact-row" key={route.id}>
+          <button
+            className="impact-row impact-row-button"
+            key={route.id}
+            type="button"
+            onClick={() => onOpenRoute(route)}
+          >
             <span>
               <strong>{route.title}</strong>
               <small>{route.customerReason}</small>
             </span>
             <b>{route.greenCredits.toFixed(2)} credits</b>
             <em>{route.impact} impact</em>
-          </div>
+          </button>
         ))}
       </section>
     </main>
   );
 }
 
-function CreditsWalletView() {
+function CreditsWalletView({ onNavigate, onOpenCredit, onOpenHelp, onOpenNotifications }) {
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Credits wallet"
         title={`${returnCase.customer.creditsBalance} green credits`}
@@ -733,48 +903,79 @@ function CreditsWalletView() {
       />
       <section className="panel list-panel">
         <h2>Recent credit activity</h2>
-        {creditEvents.map(([title, amount, detail]) => (
-          <div className="credit-row" key={title}>
+        {creditEvents.map((event) => (
+          <button
+            className="credit-row credit-row-button"
+            key={event.id}
+            type="button"
+            onClick={() => onOpenCredit(event)}
+          >
             <span>
-              <strong>{title}</strong>
-              <small>{detail}</small>
+              <strong>{event.title}</strong>
+              <small>{event.detail}</small>
             </span>
-            <b>{amount}</b>
-          </div>
+            <b>{event.amount}</b>
+          </button>
         ))}
       </section>
     </main>
   );
 }
 
-function MessagesView() {
+function MessagesView({ onNavigate, onOpenHelp, onOpenMessage, onOpenNotifications }) {
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Messages"
         title="Return updates"
         description="Customer-facing status messages generated by the return resolution flow."
       />
       <section className="panel list-panel">
-        {messages.map(([title, detail]) => (
-          <div className="message-row" key={title}>
+        {customerMessages.map((message) => (
+          <button
+            className="message-row message-row-button"
+            key={message.id}
+            type="button"
+            onClick={() => onOpenMessage(message)}
+          >
             <MessageCircle size={18} />
             <span>
-              <strong>{title}</strong>
-              <small>{detail}</small>
+              <strong>{message.title}</strong>
+              <small>{message.detail}</small>
             </span>
-          </div>
+          </button>
         ))}
       </section>
     </main>
   );
 }
 
-function SettingsView() {
+function SettingsView({
+  onNavigate,
+  onOpenHelp,
+  onOpenNotifications,
+  onToggleSetting,
+  settings,
+}) {
+  const settingRows = [
+    ["orderHistory", "Use order history for fit scoring"],
+    ["trustPassport", "Store trust passport after route lock"],
+    ["greenLedger", "Allow green-credit ledger updates"],
+    ["aiEvidence", "Show AI evidence on customer passport"],
+  ];
+
   return (
     <main className="studio workspace-page">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onOpenHelp}
+        onOpenNotifications={onOpenNotifications}
+      />
       <PageHeader
         eyebrow="Settings"
         title="Trust and AI transparency"
@@ -786,31 +987,45 @@ function SettingsView() {
           <div className="settings-row">
             <span>
               <strong>Custom trained model</strong>
-              <small>Not trained for this prototype. The demo uses explainable scoring with AWS-ready adapters.</small>
+              <small>
+                Not trained for this prototype. The demo uses AWS Rekognition plus an
+                explainable decision layer.
+              </small>
             </span>
-            <Badge tone="neutral">Prototype</Badge>
+            <Badge tone="neutral">Not trained</Badge>
           </div>
           <div className="settings-row">
             <span>
               <strong>Quality signal source</strong>
-              <small>Seeded scan signals now; Rekognition-style image checks can feed the same engine.</small>
+              <small>
+                Uploaded scan photos are sent to AWS Rekognition on the deployed API.
+              </small>
             </span>
-            <Badge>Adapter ready</Badge>
+            <Badge>AWS AI</Badge>
           </div>
           <div className="settings-row">
             <span>
               <strong>Customer decision layer</strong>
-              <small>Deterministic route scoring keeps payout, trust, and impact explainable.</small>
+              <small>
+                Deterministic route scoring keeps payout, trust, and impact explainable.
+              </small>
             </span>
             <Badge>Active</Badge>
           </div>
         </section>
         <section className="panel settings-panel">
           <h2>Privacy controls</h2>
-          {["Use order history for fit scoring", "Store trust passport after route lock", "Allow green-credit ledger updates"].map((item) => (
-            <div className="toggle-row" key={item}>
-              <span>{item}</span>
-              <b>On</b>
+          {settingRows.map(([key, label]) => (
+            <div className="toggle-row" key={key}>
+              <span>{label}</span>
+              <button
+                className={`toggle-switch ${settings[key] ? "on" : ""}`}
+                type="button"
+                aria-pressed={settings[key]}
+                onClick={() => onToggleSetting(key)}
+              >
+                {settings[key] ? "On" : "Off"}
+              </button>
             </div>
           ))}
         </section>
@@ -820,44 +1035,85 @@ function SettingsView() {
 }
 
 function ReturnsView({
+  activeCase,
+  aiAnalysis,
   decision,
+  media,
+  onExplainAi,
+  onImageSelect,
+  onNavigate,
+  onOpenAlternative,
+  onOpenBuyer,
+  onOpenBuyerList,
+  onOpenNotifications,
+  onOpenPassport,
+  onOpenReturnWindow,
+  onOpenRoute,
+  onRouteSelect,
+  onUpload,
+  selectedImage,
   selectedRoute,
   selectedRouteId,
   scanStep,
   setScanStep,
   syncState,
-  onNavigate,
-  onRouteSelect,
+  uploadState,
 }) {
   return (
     <main className="studio">
-      <TopActions />
+      <TopActions
+        onNavigate={onNavigate}
+        onOpenHelp={onExplainAi}
+        onOpenNotifications={onOpenNotifications}
+      />
       <ConnectedOrder onOpenOrders={() => onNavigate("orders")} />
-      <ReturnHeader onBack={() => onNavigate("home")} />
+      <ReturnHeader
+        onBack={() => onNavigate("home")}
+        onExplainWindow={onOpenReturnWindow}
+      />
 
       <div className="studio-grid">
         <section className="primary-column">
           <div className="analysis-grid">
-            <ReturnScan scanStep={scanStep} setScanStep={setScanStep} />
+            <ReturnScan
+              activeCase={activeCase}
+              onImageSelect={onImageSelect}
+              onUpload={onUpload}
+              scanStep={scanStep}
+              selectedImage={selectedImage}
+              setScanStep={setScanStep}
+              uploadState={uploadState}
+            />
             <div className="analysis-stack">
-              <GradePanel decision={decision} />
-              <SignalCards />
+              <GradePanel decision={decision} onExplainAi={onExplainAi} />
+              <AiAnalysisPanel aiAnalysis={aiAnalysis} media={media} />
+              <SignalCards scan={activeCase.scan} />
             </div>
           </div>
 
           <NextBestAction
+            onOpenRoute={onOpenRoute}
             onSelect={onRouteSelect}
             routes={decision.routes}
             selectedRouteId={selectedRouteId}
           />
           <RouteComparison
+            onOpenRoute={onOpenRoute}
             onSelect={onRouteSelect}
             routes={decision.routes}
             selectedRouteId={selectedRouteId}
           />
         </section>
 
-        <MatchRail selectedRouteId={selectedRouteId} />
+        <MatchRail
+          decision={decision}
+          onCompare={() => onOpenAlternative(refurbishedAlternatives[0], "compare")}
+          onOpenAlternative={onOpenAlternative}
+          onOpenBuyer={onOpenBuyer}
+          onOpenBuyerList={onOpenBuyerList}
+          onOpenPassport={onOpenPassport}
+          selectedRouteId={selectedRouteId}
+        />
       </div>
 
       <ImpactBar
@@ -869,19 +1125,328 @@ function ReturnsView({
   );
 }
 
+function DetailList({ children }) {
+  return <div className="detail-list">{children}</div>;
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ActionDrawer({ drawer, onClose, onNavigate, onRouteSelect }) {
+  if (!drawer) return null;
+
+  const { type, payload } = drawer;
+  let title = drawer.title;
+  let body = null;
+
+  if (type === "profile") {
+    title = "Customer profile";
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="Customer" value={returnCase.customer.name} />
+          <DetailRow label="Email" value={returnCase.customer.email} />
+          <DetailRow label="Green credits" value={returnCase.customer.creditsBalance} />
+          <DetailRow
+            label="Preferred use"
+            value={returnCase.customer.fitProfile.preferredUse}
+          />
+          <DetailRow
+            label="Comfort priority"
+            value={`${returnCase.customer.fitProfile.comfortPriority}%`}
+          />
+        </DetailList>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onNavigate("wallet")}>
+            Open wallet
+          </button>
+          <button type="button" onClick={() => onNavigate("settings")}>
+            Privacy settings
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "order") {
+    title = payload.title;
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="Order ID" value={payload.id} />
+          <DetailRow label="Date" value={payload.date} />
+          <DetailRow label="Status" value={payload.status} />
+          <DetailRow label="Value" value={formatCurrency(payload.value)} />
+        </DetailList>
+        <p className="drawer-copy">
+          NexTurn can estimate resale value and fit risk from order context before a
+          customer starts a return.
+        </p>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onNavigate("returns")}>
+            Open returns hub
+          </button>
+          <button type="button" onClick={() => onNavigate("resale")}>
+            See resale demand
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "buyer") {
+    title = payload.name;
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="Offer" value={formatCurrency(payload.offer)} />
+          <DetailRow label="Green credits" value={payload.credits.toFixed(2)} />
+          <DetailRow label="Positive rate" value={`${payload.positiveRate}%`} />
+          <DetailRow label="Reviews" value={payload.reviews.toLocaleString()} />
+          <DetailRow label="Match reason" value={payload.reason} />
+        </DetailList>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onRouteSelect("resell")}>
+            Select resell route
+          </button>
+          <button type="button" onClick={() => onNavigate("messages")}>
+            Message updates
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "buyer-list") {
+    title = "Buyer queue";
+    body = (
+      <div className="drawer-list">
+        {buyerMatches.map((buyer) => (
+          <button key={buyer.id} type="button" onClick={() => drawer.openBuyer(buyer)}>
+            <img src={buyer.avatar} alt="" />
+            <span>
+              <strong>{buyer.name}</strong>
+              <small>{buyer.reason}</small>
+            </span>
+            <b>{formatCurrency(buyer.offer)}</b>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (type === "alternative" || type === "compare") {
+    title = type === "compare" ? "Refurbished vs new" : payload.name;
+    body = (
+      <>
+        <div className="drawer-product">
+          <img src={payload.image} alt="" />
+          <span>
+            <strong>{payload.name}</strong>
+            <small>{payload.label}</small>
+          </span>
+        </div>
+        <DetailList>
+          <DetailRow label="Price" value={formatCurrency(payload.price)} />
+          <DetailRow label="Condition" value={payload.condition} />
+          <DetailRow label="Fit score" value={`${payload.fit}%`} />
+          <DetailRow label="Predicted return risk" value={`${payload.returnRisk}%`} />
+          <DetailRow
+            label="New-item risk estimate"
+            value={`${Math.min(payload.returnRisk + 18, 42)}%`}
+          />
+        </DetailList>
+        <p className="drawer-copy">
+          This keeps the customer in Amazon's trusted flow while nudging them toward
+          lower-risk certified refurbished choices.
+        </p>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onNavigate("orders")}>
+            Connect to order
+          </button>
+          <button type="button" onClick={() => onNavigate("returns")}>
+            Use as exchange match
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "route") {
+    title = payload.title;
+    body = (
+      <>
+        <DetailList>
+          <DetailRow
+            label="Payout / value"
+            value={payload.payout > 0 ? formatCurrency(payload.payout) : "No cash payout"}
+          />
+          <DetailRow label="Green credits" value={payload.greenCredits.toFixed(2)} />
+          <DetailRow label="Payment time" value={payload.paymentTime} />
+          <DetailRow label="Convenience" value={payload.convenience} />
+          <DetailRow label="Customer reason" value={payload.customerReason} />
+        </DetailList>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onRouteSelect(payload.id)}>
+            Select this route
+          </button>
+          <button type="button" onClick={() => onNavigate("impact")}>
+            See impact
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "passport") {
+    title = "Trust Passport";
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="Passport ID" value={returnCase.trustPassport.id} />
+          <DetailRow label="Authenticity" value={returnCase.trustPassport.authenticity} />
+          <DetailRow label="Functionality" value={returnCase.trustPassport.functionality} />
+          <DetailRow label="Cleaning" value={returnCase.trustPassport.cleaned} />
+          <DetailRow label="Warranty" value={`${returnCase.trustPassport.warrantyDays} days`} />
+        </DetailList>
+        <p className="drawer-copy">
+          The passport can be shown to the next owner so customers can trust certified
+          second-life items without guessing condition.
+        </p>
+      </>
+    );
+  }
+
+  if (type === "ai") {
+    title = "AI transparency";
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="AWS AI service" value="Amazon Rekognition DetectLabels" />
+          <DetailRow label="Custom training" value="Not used in this prototype" />
+          <DetailRow label="Decision layer" value="Explainable route scoring" />
+          <DetailRow label="Persistence" value="DynamoDB scan record plus S3 media object" />
+        </DetailList>
+        <p className="drawer-copy">
+          The AI detects visual labels from uploaded product images. NexTurn then uses
+          transparent business rules for condition grade, payout route, and green credits
+          so the customer can see why a decision was made.
+        </p>
+      </>
+    );
+  }
+
+  if (type === "return-window") {
+    title = "Return window";
+    body = (
+      <p className="drawer-copy">
+        This connected order has {returnCase.returnWindowDays} days left in the return
+        window. NexTurn prioritizes routes that preserve refund value while avoiding
+        disposal or low-trust liquidation.
+      </p>
+    );
+  }
+
+  if (type === "notifications") {
+    title = "Recent messages";
+    body = (
+      <div className="drawer-list">
+        {customerMessages.map((message) => (
+          <button key={message.id} type="button" onClick={() => onNavigate("messages")}>
+            <MessageCircle size={18} />
+            <span>
+              <strong>{message.title}</strong>
+              <small>{message.detail}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (type === "credit") {
+    title = payload.title;
+    body = (
+      <DetailList>
+        <DetailRow label="Credit change" value={payload.amount} />
+        <DetailRow label="Reason" value={payload.detail} />
+        <DetailRow label="Redeemable value" value={formatCurrency(returnCase.customer.creditsValue)} />
+      </DetailList>
+    );
+  }
+
+  if (type === "message") {
+    title = payload.title;
+    body = <p className="drawer-copy">{payload.detail}</p>;
+  }
+
+  return (
+    <div className="drawer-backdrop" role="presentation" onClick={onClose}>
+      <aside
+        className="drawer-panel"
+        aria-label={title}
+        aria-modal="true"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <h2>{title}</h2>
+          <button type="button" aria-label="Close panel" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="drawer-body">{body}</div>
+      </aside>
+    </div>
+  );
+}
+
 export function App() {
-  const decision = useMemo(() => summarizeDecision(returnCase), []);
+  const initialDecision = useMemo(() => summarizeDecision(returnCase), []);
+  const [activeCase, setActiveCase] = useState(returnCase);
   const [activeView, setActiveView] = useState("returns");
-  const [selectedRouteId, setSelectedRouteId] = useState(decision.recommended.id);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [decision, setDecision] = useState(initialDecision);
+  const [drawer, setDrawer] = useState(null);
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [media, setMedia] = useState(null);
   const [scanStep, setScanStep] = useState(1);
+  const [selectedImage, setSelectedImage] = useState(returnCase.item.image);
+  const [selectedRouteId, setSelectedRouteId] = useState(initialDecision.recommended.id);
+  const [settings, setSettings] = useState({
+    aiEvidence: true,
+    greenLedger: true,
+    orderHistory: true,
+    trustPassport: true,
+  });
   const [syncState, setSyncState] = useState({
     status: "idle",
     message: "Local decision ready",
+  });
+  const [uploadState, setUploadState] = useState({
+    status: "idle",
+    title: "Ready for upload",
+    message: "Upload a fresh product photo to run AWS Rekognition on the deployed app.",
   });
 
   const selectedRoute =
     decision.routes.find((route) => route.id === selectedRouteId) ??
     decision.recommended;
+
+  function openDrawer(type, payload = {}, extra = {}) {
+    setDrawer({ type, payload, ...extra });
+  }
+
+  function navigate(view) {
+    setActiveView(view);
+    setDrawer(null);
+  }
 
   async function handleRouteSelect(routeId) {
     setSelectedRouteId(routeId);
@@ -901,28 +1466,167 @@ export function App() {
     }
   }
 
+  async function handleUpload(file) {
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadState({
+        status: "error",
+        title: "Upload too large",
+        message: "Use a product photo under 5 MB for this prototype.",
+      });
+      return;
+    }
+
+    setScanStep(1);
+    setUploadState({
+      status: "syncing",
+      title: "Analyzing scan",
+      message: "Uploading image and requesting AI labels...",
+    });
+    setSyncState({ status: "syncing", message: "Running AI scan..." });
+
+    try {
+      const result = await evaluateScanUpload(file, activeCase.scan);
+      setSelectedImage(result.imagePreview);
+      setAiAnalysis(result.aiAnalysis);
+      setMedia(result.media);
+
+      if (result.case) {
+        const nextDecision = summarizeDecision(result.case);
+        setActiveCase(result.case);
+        setDecision(nextDecision);
+        setSelectedRouteId(result.recommendedRoute?.id ?? nextDecision.recommended.id);
+      }
+
+      const usedAws = Boolean(result.aiAnalysis?.usedAws);
+      setScanStep(2);
+      setUploadState({
+        status: usedAws ? "synced" : "idle",
+        title: usedAws ? "AWS AI complete" : "Upload processed",
+        message:
+          result.aiAnalysis?.summary ??
+          "Scan image was accepted and the condition decision was refreshed.",
+      });
+      setSyncState({
+        status: result.persisted ? "synced" : usedAws ? "synced" : "idle",
+        message: usedAws
+          ? "AWS Rekognition labels applied"
+          : result.aiAnalysis?.summary ?? "Upload kept locally",
+      });
+    } catch (error) {
+      setUploadState({
+        status: "error",
+        title: "Upload failed",
+        message: error.message,
+      });
+      setSyncState({
+        status: "error",
+        message: "AI scan unavailable. Existing decision preserved.",
+      });
+    }
+  }
+
+  function toggleSetting(key) {
+    setSettings((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  }
+
+  const commonPageProps = {
+    onNavigate: navigate,
+    onOpenHelp: () => openDrawer("ai"),
+    onOpenNotifications: () => openDrawer("notifications"),
+  };
+
   return (
-    <div className="app-shell">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} />
-      {activeView === "home" && <HomeView decision={decision} onNavigate={setActiveView} />}
-      {activeView === "orders" && <OrdersView onNavigate={setActiveView} />}
+    <div className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <Sidebar
+        activeView={activeView}
+        collapsed={isSidebarCollapsed}
+        onNavigate={navigate}
+        onOpenProfile={() => openDrawer("profile")}
+        onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
+      />
+      {activeView === "home" && (
+        <HomeView
+          {...commonPageProps}
+          decision={decision}
+          onOpenAlternative={(item) => openDrawer("alternative", item)}
+        />
+      )}
+      {activeView === "orders" && (
+        <OrdersView
+          {...commonPageProps}
+          onOpenOrder={(order) => openDrawer("order", order)}
+        />
+      )}
       {activeView === "returns" && (
         <ReturnsView
+          activeCase={activeCase}
+          aiAnalysis={aiAnalysis}
           decision={decision}
-          onNavigate={setActiveView}
+          media={media}
+          onExplainAi={() => openDrawer("ai")}
+          onImageSelect={setSelectedImage}
+          onNavigate={navigate}
+          onOpenAlternative={(item, type = "alternative") => openDrawer(type, item)}
+          onOpenBuyer={(buyer) => openDrawer("buyer", buyer)}
+          onOpenBuyerList={() =>
+            openDrawer("buyer-list", {}, { openBuyer: (buyer) => openDrawer("buyer", buyer) })
+          }
+          onOpenNotifications={() => openDrawer("notifications")}
+          onOpenPassport={() => openDrawer("passport")}
+          onOpenReturnWindow={() => openDrawer("return-window")}
+          onOpenRoute={(route) => openDrawer("route", route)}
           onRouteSelect={handleRouteSelect}
+          onUpload={handleUpload}
           scanStep={scanStep}
+          selectedImage={selectedImage}
           selectedRoute={selectedRoute}
           selectedRouteId={selectedRouteId}
           setScanStep={setScanStep}
           syncState={syncState}
+          uploadState={uploadState}
         />
       )}
-      {activeView === "resale" && <ResaleDashboardView />}
-      {activeView === "impact" && <GreenImpactView decision={decision} />}
-      {activeView === "wallet" && <CreditsWalletView />}
-      {activeView === "messages" && <MessagesView />}
-      {activeView === "settings" && <SettingsView />}
+      {activeView === "resale" && (
+        <ResaleDashboardView
+          {...commonPageProps}
+          onOpenBuyer={(buyer) => openDrawer("buyer", buyer)}
+        />
+      )}
+      {activeView === "impact" && (
+        <GreenImpactView
+          {...commonPageProps}
+          decision={decision}
+          onOpenRoute={(route) => openDrawer("route", route)}
+        />
+      )}
+      {activeView === "wallet" && (
+        <CreditsWalletView
+          {...commonPageProps}
+          onOpenCredit={(event) => openDrawer("credit", event)}
+        />
+      )}
+      {activeView === "messages" && (
+        <MessagesView
+          {...commonPageProps}
+          onOpenMessage={(message) => openDrawer("message", message)}
+        />
+      )}
+      {activeView === "settings" && (
+        <SettingsView
+          {...commonPageProps}
+          onToggleSetting={toggleSetting}
+          settings={settings}
+        />
+      )}
+      <ActionDrawer
+        drawer={drawer}
+        onClose={() => setDrawer(null)}
+        onNavigate={navigate}
+        onRouteSelect={handleRouteSelect}
+      />
     </div>
   );
 }
