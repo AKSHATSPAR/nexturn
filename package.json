@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "5.0.4",
-    "vite": "6.4.2",
+    "lucide-react": "^1.18.0",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
-  },
-  "devDependencies": {}
+    "react-dom": "19.2.0",
+    "vite": "6.4.2"
+  }
 }
