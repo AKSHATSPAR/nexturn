@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.mjs",
     "smoke:api": "node scripts/smoke-api.mjs",
+    "seed:ddb": "node scripts/seed-dynamodb.mjs",
     "cdk:synth": "cdk synth",
     "cdk:deploy": "cdk deploy --require-approval never"
   },

@@ -18,6 +18,13 @@ npm run cdk:synth
 npm run cdk:deploy
 ```
 
+After deployment, seed the demo data with the DynamoDB table name emitted by the
+stack:
+
+```bash
+NEX_TURN_TABLE_NAME=<table-name> npm run seed:ddb
+```
+
 The current handler works without deployed data by falling back to deterministic
 seeded demo data. The DynamoDB table is provisioned so the repository has a real
 AWS persistence boundary ready for the next iteration.
