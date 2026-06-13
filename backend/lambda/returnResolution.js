@@ -1,5 +1,9 @@
 import { buyerMatches, refurbishedAlternatives, returnCase } from "../../src/data/returnCase.js";
 import { summarizeDecision } from "../../src/lib/decisionEngine.js";
+import {
+  saveRouteSelection,
+  saveScanEvaluation,
+} from "../lib/dynamodbRepository.js";
 
 const headers = {
   "access-control-allow-origin": "*",
@@ -48,7 +52,7 @@ function createCasePayload(overrides = {}) {
   };
 }
 
-function selectRoute(routeId) {
+async function selectRoute(routeId) {
   const payload = createCasePayload();
   const selected = payload.decision.routes.find((route) => route.id === routeId);
 
@@ -59,6 +63,8 @@ function selectRoute(routeId) {
     });
   }
 
+  const persistence = await saveRouteSelection(returnCase, selected);
+
   return json(200, {
     selectedRoute: selected,
     passport: {
@@ -67,6 +73,7 @@ function selectRoute(routeId) {
       status: "ready_for_customer_confirmation",
     },
     creditPreview: selected.greenCredits,
+    persistence,
     customerMessage:
       selected.id === "resell"
         ? "Your item can be matched to a trusted buyer with estimated payout in 2-3 days."
@@ -74,7 +81,7 @@ function selectRoute(routeId) {
   });
 }
 
-function evaluateScan(body) {
+async function evaluateScan(body) {
   const payload = createCasePayload({
     scan: {
       cosmeticWear: Number(body.cosmeticWear ?? returnCase.scan.cosmeticWear),
@@ -88,12 +95,18 @@ function evaluateScan(body) {
       demandScore: Number(body.demandScore ?? returnCase.scan.demandScore),
     },
   });
+  const persistence = await saveScanEvaluation(
+    payload.case,
+    payload.decision.grade,
+    payload.decision.recommended,
+  );
 
   return json(200, {
     grade: payload.decision.grade,
     recommendedRoute: payload.decision.recommended,
     routes: payload.decision.routes,
     inspectionSignals: payload.case.scan.inspectionSignals,
+    persistence,
   });
 }
 

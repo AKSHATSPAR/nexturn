@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { App, CfnOutput, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   AttributeType,
   BillingMode,
@@ -8,8 +10,12 @@ import {
 } from "aws-cdk-lib/aws-dynamodb";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
-import { Architecture, Code, Runtime, Function as LambdaFunction } from "aws-cdk-lib/aws-lambda";
+import { Architecture, Runtime } from "aws-cdk-lib/aws-lambda";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
+
+const cdkDir = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(cdkDir, "../..");
 
 class NexTurnStack extends Stack {
   constructor(scope, id, props = {}) {
@@ -56,21 +62,16 @@ class NexTurnStack extends Stack {
       ],
     });
 
-    const apiHandler = new LambdaFunction(this, "ReturnResolutionHandler", {
+    const apiHandler = new NodejsFunction(this, "ReturnResolutionHandler", {
       runtime: Runtime.NODEJS_22_X,
       architecture: Architecture.ARM_64,
-      handler: "backend/lambda/returnResolution.handler",
-      code: Code.fromAsset(".", {
-        exclude: [
-          ".git",
-          ".npm-cache",
-          "cdk.out",
-          "dist",
-          "docs/screenshots",
-          "infra/cdk/node_modules",
-          "node_modules/.cache",
-        ],
-      }),
+      entry: path.join(rootDir, "backend/lambda/returnResolution.js"),
+      handler: "handler",
+      depsLockFilePath: path.join(rootDir, "package-lock.json"),
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
       timeout: Duration.seconds(8),
       memorySize: 256,
       environment: {

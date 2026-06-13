@@ -10,6 +10,7 @@ export const returnCase = {
     subtotal: 129.99,
   },
   customer: {
+    id: "cust_aarav",
     name: "Aarav Mehta",
     email: "aarav@example.com",
     creditsBalance: 125,
