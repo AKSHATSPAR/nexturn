@@ -34,6 +34,7 @@ import {
   formatCurrency,
   summarizeDecision,
 } from "./lib/decisionEngine";
+import { lockRoute } from "./services/returnResolutionApi";
 
 const navItems = [
   ["Home", Home],
@@ -449,7 +450,7 @@ function TrustPassport({ selectedRouteId }) {
   );
 }
 
-function ImpactBar({ decision, selectedRoute }) {
+function ImpactBar({ decision, selectedRoute, syncState }) {
   return (
     <section className="impact-bar">
       <span>
@@ -462,6 +463,7 @@ function ImpactBar({ decision, selectedRoute }) {
         {decision.impact.landfillAvoidedGrams} g kept out of disposal ·{" "}
         {decision.impact.nextOwnerMatchRate}% match confidence
       </span>
+      <span className={`sync-state ${syncState.status}`}>{syncState.message}</span>
     </section>
   );
 }
@@ -470,10 +472,32 @@ export function App() {
   const decision = useMemo(() => summarizeDecision(returnCase), []);
   const [selectedRouteId, setSelectedRouteId] = useState(decision.recommended.id);
   const [scanStep, setScanStep] = useState(1);
+  const [syncState, setSyncState] = useState({
+    status: "idle",
+    message: "Local decision ready",
+  });
 
   const selectedRoute =
     decision.routes.find((route) => route.id === selectedRouteId) ??
     decision.recommended;
+
+  async function handleRouteSelect(routeId) {
+    setSelectedRouteId(routeId);
+    setSyncState({ status: "syncing", message: "Syncing route..." });
+
+    try {
+      const result = await lockRoute(routeId);
+      setSyncState({
+        status: result.persisted ? "synced" : "idle",
+        message: result.persisted ? "Synced to AWS route ledger" : result.message,
+      });
+    } catch {
+      setSyncState({
+        status: "error",
+        message: "API unavailable. Decision kept locally.",
+      });
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -497,12 +521,12 @@ export function App() {
             </div>
 
             <NextBestAction
-              onSelect={setSelectedRouteId}
+              onSelect={handleRouteSelect}
               routes={decision.routes}
               selectedRouteId={selectedRouteId}
             />
             <RouteComparison
-              onSelect={setSelectedRouteId}
+              onSelect={handleRouteSelect}
               routes={decision.routes}
               selectedRouteId={selectedRouteId}
             />
@@ -511,7 +535,11 @@ export function App() {
           <MatchRail selectedRouteId={selectedRouteId} />
         </div>
 
-        <ImpactBar decision={decision} selectedRoute={selectedRoute} />
+        <ImpactBar
+          decision={decision}
+          selectedRoute={selectedRoute}
+          syncState={syncState}
+        />
       </main>
     </div>
   );

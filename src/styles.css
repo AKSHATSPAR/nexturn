@@ -924,7 +924,8 @@ h1 {
 .impact-bar {
   position: sticky;
   bottom: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.15fr 1.1fr auto;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -941,6 +942,20 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sync-state {
+  justify-self: end;
+  color: #52606a;
+  white-space: nowrap;
+}
+
+.sync-state.synced {
+  color: var(--green-deep);
+}
+
+.sync-state.error {
+  color: var(--danger);
 }
 
 @media (max-width: 1180px) {
@@ -1026,6 +1041,16 @@ h1 {
   .return-header,
   .impact-bar {
     display: grid;
+  }
+
+  .impact-bar {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding-block: 10px;
+  }
+
+  .sync-state {
+    justify-self: start;
   }
 
   .return-status {
