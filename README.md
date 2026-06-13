@@ -20,6 +20,8 @@ best value. NexTurn turns the return moment into a guided customer decision:
 
 - Return Resolution Studio UI built with React + Vite.
 - Deterministic decision engine for grade, route ranking, and green-credit logic.
+- AI transparency view that explains the prototype uses explainable scoring now,
+  with an AWS AI signal-adapter path rather than a rushed custom-trained model.
 - Lambda-compatible API with endpoints for case fetch, scan evaluation, and route
   selection.
 - DynamoDB persistence path for scan evaluations, route decisions, trust passport
@@ -85,4 +87,6 @@ site/API URL, DynamoDB table name, and backing S3 bucket name for future media.
 - `backend/lib/dynamodbRepository.js` - DynamoDB persistence adapter.
 - `infra/cdk/app.mjs` - AWS CDK stack.
 - `docs/architecture/` - DynamoDB model and access patterns.
+- `docs/architecture/ai-model-strategy.md` - current AI approach and training
+  plan.
 - `docs/design/return-resolution-studio-concept.png` - selected visual concept.
