@@ -22,6 +22,7 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | `RETURN#ret_8821_7710_55` | `PASSPORT#NT-8821-7710-55` | `TrustPassport` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
 | `RETURN#ret_8821_7710_55` | `MATCH#buyer_rahul` | `BuyerMatch` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
 | `CUSTOMER#cust_aarav` | `CREDIT#2026-06-13T18:15:00Z#evt_1` | `GreenCreditLedger` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
+| `CUSTOMER#cust_aarav` | `FIT#alt_qc` | `PurchaseFitRecommendation` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
 
 - **Purpose**: stores return resolution aggregates and green-credit ledger
   entries.
@@ -29,7 +30,8 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
   multi-attribute keys.
 - **Sort Key**: `sk`, a typed prefix key for bounded range queries.
 - **SK Taxonomy**: `META`, `SCAN#<version>`, `ROUTE#<routeId>`,
-  `PASSPORT#<passportId>`, `MATCH#<buyerId>`, `CREDIT#<createdAt>#<eventId>`.
+  `PASSPORT#<passportId>`, `MATCH#<buyerId>`, `CREDIT#<createdAt>#<eventId>`,
+  `FIT#<alternativeId>`.
 - **Capacity**: on-demand billing for the prototype; no provisioned capacity to
   tune during the hackathon.
 
@@ -74,6 +76,7 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | AP6 | Get buyer matches | Query | 20 | 4 | 1 KB | NexTurnTable | `Query(pk = RETURN#id, begins_with(sk, MATCH#))` | Bounded match list |
 | AP7 | Append green credit event | PutItem | 8 | - | 1 KB | NexTurnTable | `PutItem(pk = CUSTOMER#id, sk = CREDIT#...)` | Append-only ledger |
 | AP8 | List green credit activity | Query | 8 | 20 | 1 KB | CustomerActivityIndex | `Query(customerId = id)` | Filter by entity type in app |
+| AP9 | List low-return purchase alternatives | Query | 10 | 6 | 1 KB | NexTurnTable | `Query(pk = CUSTOMER#id, begins_with(sk, FIT#))` | Supports predictive return prevention |
 
 ## Hot Partition Analysis
 
