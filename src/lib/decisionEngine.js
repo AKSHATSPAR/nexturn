@@ -79,7 +79,7 @@ export function buildRouteOptions(returnCase) {
         scan.priceRetention * 100 * 0.2 +
         customerConvenienceBoost,
       customerReason:
-        "Best customer value because demand is high and the item can avoid warehouse liquidation.",
+        "Best value: high demand, fast payout, and avoids liquidation.",
       cta: "Resell now",
     },
     {
@@ -94,7 +94,7 @@ export function buildRouteOptions(returnCase) {
       impact: "Medium",
       score: 76 + (100 - scan.demandScore) * 0.1,
       customerReason:
-        "Useful if the customer still needs headphones and wants the fastest replacement path.",
+        "Fastest if the customer still wants a better-fit replacement.",
       cta: "See matches",
     },
     {
@@ -109,7 +109,7 @@ export function buildRouteOptions(returnCase) {
       impact: "High",
       score: 58 + scan.functionalScore * 0.08 + scan.hygieneScore * 0.05,
       customerReason:
-        "Meaningful when payout is less important than a verified donation receipt and social impact.",
+        "Best when verified donation impact matters more than payout.",
       cta: "Donate item",
     },
     {
@@ -124,7 +124,7 @@ export function buildRouteOptions(returnCase) {
       impact: "Medium",
       score: 42 + scan.fraudRisk * 0.5,
       customerReason:
-        "Fallback route for damaged or low-trust items so materials are recovered instead of discarded.",
+        "Fallback for damaged items so materials are recovered.",
       cta: "Recycle item",
     },
   ];

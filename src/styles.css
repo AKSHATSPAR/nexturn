@@ -187,7 +187,7 @@ button {
   max-width: 1220px;
   width: 100%;
   margin: 0 auto;
-  padding: 7px 24px 28px;
+  padding: 6px 24px 22px;
 }
 
 .top-actions {
@@ -269,14 +269,14 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  margin: 24px 0 18px;
+  margin: 18px 0 14px;
 }
 
 .back-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 0;
   color: #1f2b35;
   background: transparent;
@@ -341,12 +341,12 @@ h1 {
 .studio-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 16px;
+  gap: 14px;
 }
 
 .primary-column {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .analysis-grid {
@@ -391,7 +391,7 @@ h1 {
 .product-frame {
   display: grid;
   place-items: center;
-  height: 298px;
+  height: 244px;
   margin: 16px 16px 10px;
   background: #f5f6f5;
   border-radius: 8px;
@@ -413,7 +413,7 @@ h1 {
 
 .thumb-row button {
   position: relative;
-  height: 64px;
+  height: 52px;
   overflow: hidden;
   background: #f6f7f6;
   border: 1px solid transparent;
@@ -445,7 +445,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0;
-  margin: 16px 16px 0;
+  margin: 12px 16px 0;
 }
 
 .scan-timeline button {
@@ -493,17 +493,17 @@ h1 {
 }
 
 .grade-panel {
-  min-height: 178px;
+  min-height: 158px;
 }
 
 .grade-body {
-  padding: 18px 16px 0;
+  padding: 14px 16px 0;
 }
 
 .grade-body strong {
   display: block;
   color: var(--green);
-  font-size: 54px;
+  font-size: 48px;
   line-height: 0.9;
   letter-spacing: 0;
 }
@@ -533,7 +533,7 @@ h1 {
   position: relative;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  margin: 30px 16px 0;
+  margin: 24px 16px 0;
   padding-top: 11px;
   border-top: 6px solid transparent;
   border-image: linear-gradient(90deg, #d65a35, #e7b028, #79bd35, #14934b) 1;
@@ -556,8 +556,8 @@ h1 {
 }
 
 .mini-panel {
-  min-height: 126px;
-  padding: 14px;
+  min-height: 112px;
+  padding: 12px 14px;
 }
 
 .mini-panel h3 {
@@ -610,11 +610,11 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-  padding: 14px 12px 0;
+  padding: 12px 12px 0;
 }
 
 .route-card {
-  min-height: 188px;
+  min-height: 164px;
   padding: 12px;
   text-align: left;
   background: #fff;
@@ -647,14 +647,14 @@ h1 {
 }
 
 .route-card p {
-  margin-top: 12px;
+  margin-top: 9px;
 }
 
 .route-card strong {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 13px;
+  margin-top: 10px;
   font-size: 18px;
 }
 
@@ -667,18 +667,19 @@ h1 {
 .route-card small,
 .route-reason {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .route-reason {
-  min-height: 45px;
+  min-height: 32px;
+  line-height: 1.25;
 }
 
 .route-cta {
   display: grid;
   place-items: center;
-  min-height: 34px;
-  margin-top: 11px;
+  min-height: 32px;
+  margin-top: 8px;
   color: #fff;
   background: var(--green);
   border-radius: 6px;
@@ -693,11 +694,11 @@ h1 {
 }
 
 .comparison {
-  padding: 14px;
+  padding: 12px 14px;
 }
 
 .comparison h2 {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   font-size: 14px;
 }
 
@@ -711,7 +712,7 @@ h1 {
   display: grid;
   grid-template-columns: 1.25fr 1fr 0.9fr 0.9fr 0.85fr 0.85fr;
   width: 100%;
-  min-height: 34px;
+  min-height: 31px;
   padding: 0 12px;
   color: #40505b;
   text-align: left;
@@ -927,8 +928,8 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 42px;
-  margin-top: 14px;
+  min-height: 38px;
+  margin-top: 12px;
   padding: 0 16px;
   color: var(--green-deep);
   background: linear-gradient(90deg, #eaf8ef, #f4fbf6);
