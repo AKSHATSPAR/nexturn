@@ -1,0 +1,10 @@
+{
+  "version": "2.0",
+  "rawPath": "/case",
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/case"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "rawPath": "/route",
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/route"
+    }
+  },
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"routeId\":\"resell\"}"
+}

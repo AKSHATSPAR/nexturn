@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "rawPath": "/scan/evaluate",
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/scan/evaluate"
+    }
+  },
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"cosmeticWear\":7,\"functionalScore\":96,\"accessoryCompleteness\":100,\"hygieneScore\":93,\"packagingScore\":86,\"fraudRisk\":4,\"demandScore\":88}"
+}

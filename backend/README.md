@@ -19,3 +19,9 @@ Gateway on AWS Free Tier.
 The demo should never depend on a vague AI promise. The rules are explicit,
 repeatable, and explainable. Rekognition or Bedrock can enrich the scan signals
 later, but the core customer decision remains stable and testable.
+
+## Local Invocation Fixtures
+
+The `backend/events/` folder contains API Gateway v2-shaped sample events for
+the three implemented paths. They are useful for Lambda console tests, local
+debugging, and demo scripts.
