@@ -52,6 +52,10 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`.
 
+## Live AWS Demo
+
+https://l5f3ovamaj.execute-api.us-east-1.amazonaws.com
+
 ## Verification
 
 ```bash

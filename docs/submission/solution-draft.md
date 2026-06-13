@@ -62,7 +62,7 @@ Demo evidence:
 | Backend | AWS Lambda + HTTP API | Low-cost serverless API for return decisions |
 | Data | DynamoDB | Low-latency item collections for return case workflows |
 | Infra | AWS CDK | Repeatable deployment in `us-east-1` |
-| Assets | S3-ready static build | Durable hosting path for frontend and future media uploads |
+| Assets | HTTP API static-site Lambda + S3-ready media bucket | Live AWS demo without CloudFront account verification |
 
 ## Key Algorithms
 
@@ -102,5 +102,5 @@ marketplace scale.
 ## Links
 
 - GitHub: `https://github.com/AKSHATSPAR/nexturn`
-- Live app: pending deployment
+- Live app: `https://l5f3ovamaj.execute-api.us-east-1.amazonaws.com`
 - Demo video: pending recording

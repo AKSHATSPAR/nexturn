@@ -9,3 +9,5 @@ coverage/
 *.log
 cdk.out/
 .aws-sam/
+.playwright-cli/
+output/
