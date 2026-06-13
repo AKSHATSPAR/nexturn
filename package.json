@@ -7,7 +7,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "smoke:api": "node scripts/smoke-api.mjs"
+    "smoke:api": "node scripts/smoke-api.mjs",
+    "cdk:synth": "cdk synth",
+    "cdk:deploy": "cdk deploy --require-approval never"
   },
   "dependencies": {
     "@vitejs/plugin-react": "5.0.4",
@@ -15,5 +17,10 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "vite": "6.4.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1126.0",
+    "aws-cdk-lib": "^2.259.0",
+    "constructs": "^10.6.0"
   }
 }

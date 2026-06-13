@@ -1,0 +1,6 @@
+{
+  "app": "node infra/cdk/app.mjs",
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true
+  }
+}
