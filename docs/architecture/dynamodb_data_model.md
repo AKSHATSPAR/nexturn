@@ -97,7 +97,7 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | AP9 | List low-return purchase alternatives | Query | 10 | 6 | 1 KB | NexTurnTable | `Query(pk = CUSTOMER#id, begins_with(sk, FIT#))` | Supports predictive return prevention |
 | AP10 | List active C2C marketplace listings | Query | 30 | 50 | 3 KB | MarketplaceIndex | `Query(marketplaceStatus = LISTING#ACTIVE)` | Hero listings above public API feed |
 | AP11 | Create C2C listing | PutItem | 8 | - | 4 KB | NexTurnTable | `PutItem(pk = LISTING#id, sk = PROFILE)` | Seller keeps item at home |
-| AP12 | Join C2C buyer queue | TransactWrite | 8 | - | 2 KB | NexTurnTable | `Put interest + update listing queue count` | Payment locked until pickup review |
+| AP12 | Join C2C buyer queue | TransactWrite | 8 | - | 2 KB | NexTurnTable | `Put interest + atomically mark listing queueFilled` | First buyer reserves queue; payment locked until pickup review |
 | AP13 | Get listing detail | GetItem | 25 | 1 | 4 KB | NexTurnTable | `GetItem(pk = LISTING#id, sk = PROFILE)` | Proof, AI review, price, purchase date, logistics |
 | AP14 | Save buyer/seller profile | PutItem | 8 | - | 1 KB | NexTurnTable | `PutItem(pk = CUSTOMER#id, sk = PROFILE)` | Required India address before buy/sell |
 

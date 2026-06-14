@@ -149,6 +149,7 @@ export const seedC2CListings = [
     source: "nexturn-ai-graded",
     item: orderProofHistory[0],
     image: orderProofHistory[0].image,
+    uploadedImagePreview: "/assets/products/refurb-headphones-silver.png",
     grade: {
       grade: "A-",
       label: "Excellent",
@@ -184,6 +185,7 @@ export const seedC2CListings = [
     source: "nexturn-ai-graded",
     item: orderProofHistory[1],
     image: orderProofHistory[1].image,
+    uploadedImagePreview: "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-watch-series-4-gold/2.webp",
     grade: {
       grade: "B+",
       label: "Very good",
@@ -219,6 +221,7 @@ export const seedC2CListings = [
     source: "nexturn-ai-graded",
     item: orderProofHistory[2],
     image: orderProofHistory[2].image,
+    uploadedImagePreview: "https://cdn.dummyjson.com/product-images/tablets/ipad-mini-2021-starlight/2.webp",
     grade: {
       grade: "B",
       label: "Good",

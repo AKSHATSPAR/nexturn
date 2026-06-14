@@ -155,7 +155,34 @@ test("creates buyer interest queue records without opening payment", () => {
 
   assert.equal(interest.status, "queued_for_pickup_review");
   assert.equal(interest.paymentStatus, "locked_until_pickup_review");
+  assert.ok(interest.greenCreditsPending > 0);
   assert.ok(interest.estimatedDeliveryFee >= 79);
+});
+
+test("persists queue-filled state over seed listings in marketplace merge", () => {
+  const marketplace = mergeMarketplaceListings(
+    [
+      {
+        id: "seed_listing_airpods_max",
+        status: "active",
+        createdAt: "2026-06-15T10:00:00.000Z",
+        sellerId: "demo_seller_maya",
+        item: orderProofHistory[0],
+        grade: { grade: "A-", label: "Excellent" },
+        price: 40732,
+        queueFilled: true,
+        queueStatus: "filled",
+        queueBuyerId: "cognito#buyer",
+        interestCount: 1,
+      },
+    ],
+    [],
+  );
+
+  const listing = marketplace.heroListings.find((item) => item.id === "seed_listing_airpods_max");
+
+  assert.equal(listing.queueFilled, true);
+  assert.equal(listing.queueBuyerId, "cognito#buyer");
 });
 
 test("normalizes legacy persisted listings into INR marketplace data", () => {

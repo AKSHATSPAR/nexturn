@@ -17,6 +17,33 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function readFileAsPreviewDataUrl(file) {
+  const original = await readFileAsDataUrl(file);
+  if (!file?.type?.startsWith("image/") || typeof document === "undefined") {
+    return original;
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const maxEdge = 720;
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(original);
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    });
+    image.addEventListener("error", () => resolve(original));
+    image.src = original;
+  });
+}
+
 function jsonHeaders() {
   const token = getAccessToken();
   return {
@@ -259,7 +286,9 @@ export async function saveC2CProfile(profile) {
 }
 
 async function buildListingPayload(file, orderId, profile) {
-  const imageBase64 = file ? await readFileAsDataUrl(file) : undefined;
+  const [imageBase64, uploadedImagePreview] = file
+    ? await Promise.all([readFileAsDataUrl(file), readFileAsPreviewDataUrl(file)])
+    : [];
 
   return {
     orderId,
@@ -268,6 +297,7 @@ async function buildListingPayload(file, orderId, profile) {
     fileName: file?.name,
     mimeType: file?.type,
     imageBase64,
+    uploadedImagePreview,
   };
 }
 

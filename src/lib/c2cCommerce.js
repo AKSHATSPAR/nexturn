@@ -460,6 +460,26 @@ export function calculateDiscountedPrice(originalPrice, grade) {
   };
 }
 
+export function calculateGreenCredits({ listing, order, grade, discountPercent } = {}) {
+  const sourceOrder = order ?? listing?.item ?? {};
+  const weightKg = Number(sourceOrder.estimatedWeightKg ?? 0.4);
+  const gradeValue = grade?.grade ?? listing?.grade?.grade ?? "B";
+  const discount = Number(discountPercent ?? listing?.discountPercent ?? 0);
+  const gradeBoost = ["A", "A-", "B+"].includes(gradeValue) ? 3 : gradeValue === "B" ? 2 : 1;
+  const circularityBoost = discount >= 40 ? 2 : 1;
+  const sellerListing = Math.max(6, Math.round(7 + weightKg * 5 + gradeBoost + circularityBoost));
+  const buyerQueue = Math.max(3, Math.round(3 + weightKg * 3 + circularityBoost));
+  const estimatedCo2eKg = Number(Math.max(1, weightKg * 18).toFixed(1));
+
+  return {
+    sellerListing,
+    buyerQueue,
+    estimatedCo2eKg,
+    status: "pending_pickup_review",
+    reason: "Credits reward keeping a usable product in circulation without a warehouse return hop.",
+  };
+}
+
 export function createListingFromEvaluation({
   aiAnalysis,
   identity = {},
@@ -475,6 +495,11 @@ export function createListingFromEvaluation({
   });
   const grade = gradeScorecard(scorecard);
   const pricing = calculateDiscountedPrice(order.originalPrice, grade);
+  const greenCredits = calculateGreenCredits({
+    order,
+    grade,
+    discountPercent: pricing.discountPercent,
+  });
   const publishable = aiAnalysis?.identityStatus !== "mismatch";
   const now = new Date().toISOString();
   const listingId = `nt_${order.id.replace(/[^0-9]/g, "")}_${Date.now().toString(36)}`;
@@ -498,6 +523,9 @@ export function createListingFromEvaluation({
     sellerState: sellerLocation.state,
     sellerLocation,
     status: publishable ? "active" : "blocked_identity_mismatch",
+    queueFilled: false,
+    queueStatus: "open",
+    interestCount: 0,
     createdAt: now,
     source: "nexturn-ai-graded",
     item: order,
@@ -505,6 +533,7 @@ export function createListingFromEvaluation({
     image: order.image,
     uploadedImagePreview,
     grade,
+    greenCredits,
     scorecard,
     review: {
       status: "preliminary_ai_review",
@@ -554,6 +583,7 @@ export function createInterestQueueEntry({
   });
   const deliveryFee = Number(delivery.allowed ? delivery.fee : listing.deliveryFee ?? DEFAULT_DELIVERY_FEE_INR);
   const preliminaryItemValue = Number(listing.price ?? 0);
+  const greenCreditsPending = Number(listing.greenCredits?.buyerQueue ?? calculateGreenCredits({ listing }).buyerQueue);
 
   return {
     id: `interest_${listing.id}_${Date.now().toString(36)}`,
@@ -572,6 +602,8 @@ export function createInterestQueueEntry({
     preliminaryItemValue,
     estimatedDeliveryFee: deliveryFee,
     estimatedTotalAfterReview: Number((preliminaryItemValue + deliveryFee).toFixed(2)),
+    greenCreditsPending,
+    greenCreditStatus: "pending_pickup_review",
     deliveryEstimate: delivery,
     paymentUnlockRule:
       "Payment opens only after the pickup partner manually verifies item identity, color/variant, and visible condition.",
@@ -641,6 +673,19 @@ export function normalizeMarketplaceListing(listing = {}) {
   });
   const price = repriced?.price ?? Number(listing.price ?? 0);
   const deliveryFee = delivery.allowed ? delivery.fee : Number(listing.deliveryFee ?? DEFAULT_DELIVERY_FEE_INR);
+  const interestCount = Number(listing.interestCount ?? 0);
+  const queueFilled = Boolean(listing.queueFilled || listing.queueStatus === "filled" || interestCount > 0);
+  const greenCredits = listing.greenCredits ?? calculateGreenCredits({
+    listing: {
+      ...listing,
+      item,
+      price,
+      discountPercent:
+        repriced?.discountPercent ??
+        listing.discountPercent ??
+        (item?.originalPrice ? Math.round((1 - price / Number(item.originalPrice)) * 100) : 0),
+    },
+  });
 
   return {
     ...listing,
@@ -652,12 +697,18 @@ export function normalizeMarketplaceListing(listing = {}) {
     sellerState: sellerLocation.state,
     sellerLocation,
     sellerNeighborhood: listing.sellerNeighborhood ?? sellerLocation.city,
+    queueFilled,
+    queueStatus: queueFilled ? "filled" : listing.queueStatus ?? "open",
+    queueBuyerId: listing.queueBuyerId,
+    queueInterestId: listing.queueInterestId,
+    interestCount,
     price,
     discountPercent:
       repriced?.discountPercent ??
       listing.discountPercent ??
       (item?.originalPrice ? Math.round((1 - price / Number(item.originalPrice)) * 100) : 0),
     deliveryFee,
+    greenCredits,
     deliveryEstimate: listing.deliveryEstimate ?? delivery,
     logistics:
       listing.logistics && !/after purchase/i.test(listing.logistics)
@@ -686,7 +737,7 @@ export function normalizeMarketplaceListing(listing = {}) {
 
 export function buildFallbackMarketplace() {
   return {
-    heroListings: seedC2CListings,
+    heroListings: seedC2CListings.map((listing) => normalizeMarketplaceListing(listing)),
     genericItems: buildGenericFallbackItems(),
     generatedAt: new Date().toISOString(),
     source: "local-fallback",
@@ -720,7 +771,7 @@ export function buildGenericFallbackItems(count = 180) {
 export function mergeMarketplaceListings(persistedListings = [], genericItems = []) {
   const listingMap = new Map();
 
-  [...persistedListings, ...seedC2CListings].forEach((listing) => {
+  [...seedC2CListings, ...persistedListings].forEach((listing) => {
     const normalized = normalizeMarketplaceListing(listing);
     if (normalized.status === "active") {
       listingMap.set(normalized.id, normalized);

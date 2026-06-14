@@ -307,7 +307,7 @@ export async function saveC2CInterest(listing, interest) {
 
   const { TransactWriteCommand } = await import("@aws-sdk/lib-dynamodb");
   const now = new Date().toISOString();
-  const interestCount = Number(listing.interestCount ?? 0) + 1;
+  const interestCount = 1;
   const transactItems = [
     {
       Put: {
@@ -343,7 +343,35 @@ export async function saveC2CInterest(listing, interest) {
     },
   ];
 
-  if (!listing.id.startsWith("seed_")) {
+  const queuedListing = {
+    ...listing,
+    queueFilled: true,
+    queueStatus: "filled",
+    queueBuyerId: interest.buyerId,
+    queueInterestId: interest.id,
+    interestCount,
+    updatedAt: now,
+  };
+
+  if (listing.id.startsWith("seed_") && !listing.pk) {
+    transactItems.push({
+      Put: {
+        TableName: tableName,
+        Item: {
+          ...queuedListing,
+          pk: `LISTING#${listing.id}`,
+          sk: "PROFILE",
+          entityType: "C2CListing",
+          listingId: listing.id,
+          customerId: listing.sellerId,
+          marketplaceStatus: "LISTING#ACTIVE",
+          routeStatus: "marketplace#ACTIVE",
+          updatedAt: now,
+        },
+        ConditionExpression: "attribute_not_exists(pk)",
+      },
+    });
+  } else {
     transactItems.push({
       Update: {
         TableName: tableName,
@@ -351,8 +379,15 @@ export async function saveC2CInterest(listing, interest) {
           pk: `LISTING#${listing.id}`,
           sk: "PROFILE",
         },
-        UpdateExpression: "SET interestCount = :count, updatedAt = :now",
+        UpdateExpression:
+          "SET queueFilled = :filled, queueStatus = :queueStatus, queueBuyerId = :buyerId, queueInterestId = :interestId, interestCount = :count, updatedAt = :now",
+        ConditionExpression: "attribute_not_exists(queueFilled) OR queueFilled = :notFilled",
         ExpressionAttributeValues: {
+          ":filled": true,
+          ":notFilled": false,
+          ":queueStatus": "filled",
+          ":buyerId": interest.buyerId,
+          ":interestId": interest.id,
           ":count": interestCount,
           ":now": now,
         },
@@ -360,13 +395,30 @@ export async function saveC2CInterest(listing, interest) {
     });
   }
 
-  await client.send(
-    new TransactWriteCommand({
-      TransactItems: transactItems,
-    }),
-  );
+  try {
+    await client.send(
+      new TransactWriteCommand({
+        TransactItems: transactItems,
+      }),
+    );
+  } catch (error) {
+    if (error.name === "TransactionCanceledException") {
+      return {
+        mode: "dynamodb",
+        persisted: false,
+        conflict: true,
+        tableName,
+      };
+    }
+    throw error;
+  }
 
-  return { mode: "dynamodb", persisted: true, tableName };
+  return {
+    mode: "dynamodb",
+    persisted: true,
+    tableName,
+    listing: queuedListing,
+  };
 }
 
 export async function getC2CListing(listingId) {

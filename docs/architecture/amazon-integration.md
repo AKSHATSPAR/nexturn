@@ -33,9 +33,9 @@ buyer anxiety without requiring private Amazon APIs.
 4. **Marketplace listing**: item is listed with "AI Graded & Amazon Verified"
    badge.
 5. **No warehouse hold**: seller keeps the item at home.
-6. **Buyer queue**: buyer sees order proof, original purchase date, preliminary
-   AI comparison, seller location, and estimated delivery fee before joining the
-   queue.
+6. **Buyer queue**: buyer sees order proof, original product image, seller-upload
+   image, original purchase date, preliminary AI comparison, seller location,
+   green credits, and estimated delivery fee before joining the queue.
 7. **Payment locked**: no payment is collected from the buyer yet.
 8. **Facilitated delivery**: Amazon delivery partner verifies identity,
    colour/variant, and visible condition at seller pickup. Only then does the

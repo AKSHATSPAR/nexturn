@@ -108,7 +108,7 @@ export function decodeImagePayload({ imageBase64, mimeType }) {
   }
 
   if (buffer.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error("Uploaded image is larger than the 5 MB prototype limit.");
+    throw new Error("Uploaded image is larger than the 5 MB upload limit.");
   }
 
   return {

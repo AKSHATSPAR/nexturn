@@ -196,6 +196,9 @@ test("c2c interest queue locks payment until pickup review", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(body.interest.status, "queued_for_pickup_review");
   assert.equal(body.interest.paymentStatus, "locked_until_pickup_review");
+  assert.ok(body.interest.greenCreditsPending > 0);
+  assert.equal(body.listing.queueFilled, true);
+  assert.equal(body.listing.queueStatus, "filled");
   assert.ok(body.interest.estimatedDeliveryFee >= 79);
   assert.match(body.customerMessage, /payment remains locked/i);
 });

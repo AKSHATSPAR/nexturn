@@ -335,7 +335,7 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     media,
     order,
     uploadContext,
-    uploadedImagePreview: body.imageBase64,
+    uploadedImagePreview: body.uploadedImagePreview ?? body.imageBase64,
   });
 
   if (!persist) {
@@ -360,16 +360,10 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     });
   }
 
-  const persistence = await saveC2CListing({
-    ...listing,
-    uploadedImagePreview: undefined,
-  });
+  const persistence = await saveC2CListing(listing);
 
   return json(201, {
-    listing: {
-      ...listing,
-      uploadedImagePreview: undefined,
-    },
+    listing,
     aiAnalysis,
     media,
     persistence,
@@ -469,6 +463,20 @@ async function checkoutC2CListing(body, event) {
     });
   }
 
+  if (listing.queueFilled) {
+    const sameBuyer = listing.queueBuyerId === auth.identity.customerId;
+    return json(sameBuyer ? 200 : 409, {
+      listing,
+      error: sameBuyer ? undefined : "Queue already filled",
+      customerMessage: sameBuyer
+        ? "You are already in the buyer queue for this item."
+        : "Another buyer has already joined this item's queue. Filter for open-queue items to find available listings.",
+      message: sameBuyer
+        ? "You are already in the buyer queue for this item."
+        : "Another buyer has already joined this item's queue.",
+    });
+  }
+
   if (listing.sellerId === auth.identity.customerId) {
     return json(422, {
       error: "Cannot buy your own listing",
@@ -545,9 +553,25 @@ async function joinC2CInterestQueue(body, event) {
     listing,
   });
   const persistence = await saveC2CInterest(listing, interest);
+  if (persistence.conflict) {
+    return json(409, {
+      error: "Queue already filled",
+      message:
+        "Another buyer joined this item's queue first. Payment remains locked until pickup verification.",
+    });
+  }
+  const queuedListing = normalizeMarketplaceListing(persistence.listing ?? {
+    ...listing,
+    queueFilled: true,
+    queueStatus: "filled",
+    queueBuyerId: auth.identity.customerId,
+    queueInterestId: interest.id,
+    interestCount: 1,
+  });
 
   return json(200, {
     interest,
+    listing: queuedListing,
     persistence,
     customerMessage:
       "You joined the buyer queue. Payment remains locked until pickup verification confirms the final item condition and value.",

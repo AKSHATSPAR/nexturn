@@ -31,9 +31,10 @@ status.
 - `GET /c2c/marketplace` returns persisted NexTurn listings plus 100+ public API
   background items.
 - `GET /c2c/listing?listingId=...` returns one listing with order proof, original
-  purchase date, preliminary AI review, seller location, and delivery estimate.
-- `POST /c2c/interest` adds a buyer to the queue. Payment remains locked until
-  pickup verification.
+  purchase date, preliminary AI review, original image, seller-upload image,
+  seller location, green credits, and delivery estimate.
+- `POST /c2c/interest` adds the first buyer to the queue. Payment remains locked
+  until pickup verification, and later buyers receive a queue-filled conflict.
 - `POST /c2c/checkout` is reserved for the future payment-unlocked state and
   currently returns a payment-locked response unless manual pickup review has
   opened payment.

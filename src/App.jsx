@@ -48,6 +48,26 @@ const navItems = [
   { id: "settings", label: "Settings", Icon: Settings },
 ];
 
+const gradeRank = {
+  A: 5,
+  "A-": 4,
+  "B+": 3,
+  B: 2,
+  C: 1,
+  Mismatch: 0,
+};
+
+function queueLabelForListing(listing, signedInCustomerId) {
+  if (!listing?.queueFilled) return "Open queue";
+  return listing.queueBuyerId && listing.queueBuyerId === signedInCustomerId
+    ? "Joined queue"
+    : "Queue filled";
+}
+
+function sellerUploadImageForListing(listing) {
+  return listing?.uploadedImagePreview || listing?.uploadedImage || listing?.image;
+}
+
 function Badge({ children, tone = "green" }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
@@ -123,6 +143,7 @@ function Sidebar({
   activeView,
   auth,
   collapsed,
+  greenCredits,
   location,
   onGoogleSignIn,
   onNavigate,
@@ -186,6 +207,13 @@ function Sidebar({
           <small>
             Buyer route starts at {location.city}, {location.state}.
           </small>
+        </section>
+        <section className="credit-card service-card">
+          <span>Green credits</span>
+          <strong>
+            <Leaf size={22} /> {greenCredits}
+          </strong>
+          <small>Earned from verified second-life listing and queue actions.</small>
         </section>
       </div>
     </aside>
@@ -444,6 +472,24 @@ function SparkleLine() {
   );
 }
 
+function ListingImagePair({ listing }) {
+  const originalImage = listing.item?.image ?? listing.image;
+  const uploadedImage = sellerUploadImageForListing(listing);
+
+  return (
+    <div className="listing-image-pair">
+      <figure>
+        <img src={originalImage} alt="" />
+        <figcaption>Original order photo</figcaption>
+      </figure>
+      <figure>
+        <img src={uploadedImage} alt="" />
+        <figcaption>Seller upload</figcaption>
+      </figure>
+    </div>
+  );
+}
+
 function SellHubView({
   evaluation,
   filePreview,
@@ -574,13 +620,19 @@ function SellHubView({
   );
 }
 
-function HeroListingCard({ listing, onAddToCart, onOpen }) {
+function HeroListingCard({ listing, onAddToCart, onOpen, signedInCustomerId }) {
+  const queueLabel = queueLabelForListing(listing, signedInCustomerId);
+  const queueTone = listing.queueFilled ? "amber" : "green";
+
   return (
-    <article className="hero-listing-card">
+    <article className={`hero-listing-card ${listing.queueFilled ? "queue-filled" : ""}`}>
       <button className="listing-image-button" type="button" onClick={() => onOpen(listing)}>
-        <img src={listing.image} alt="" />
+        <ListingImagePair listing={listing} />
       </button>
       <span className="listing-badge">{listing.badge}</span>
+      <span className="queue-status-badge">
+        <Badge tone={queueTone}>{queueLabel}</Badge>
+      </span>
       <div>
         <strong>{listing.item.title}</strong>
         <small>
@@ -590,6 +642,9 @@ function HeroListingCard({ listing, onAddToCart, onOpen }) {
           Seller: {listing.sellerName} · {listing.sellerCity}, {listing.sellerState}
         </small>
         <small>Purchased {listing.item.purchaseDate}</small>
+        <small>
+          +{listing.greenCredits?.buyerQueue ?? 0} buyer green credits after pickup review
+        </small>
       </div>
       <footer>
         <span>
@@ -637,10 +692,15 @@ function MarketplaceView({
   onOpenListing,
   onPageChange,
   onPageSizeChange,
+  onQueueFilterChange,
   onSearch,
+  onSortChange,
   page,
   pageSize,
+  queueFilter,
   searchTerm,
+  signedInCustomerId,
+  sortOption,
 }) {
   const allCategories = useMemo(() => {
     const categories = new Set([
@@ -663,12 +723,18 @@ function MarketplaceView({
       return matchesSearch && matchesCategory;
     };
 
-    return marketplace.genericItems.filter(matches);
-  }, [categoryFilter, marketplace.genericItems, searchTerm]);
+    const items = marketplace.genericItems.filter(matches);
+    return [...items].sort((a, b) => {
+      if (sortOption === "Price: low to high") return Number(a.price ?? 0) - Number(b.price ?? 0);
+      if (sortOption === "Price: high to low") return Number(b.price ?? 0) - Number(a.price ?? 0);
+      if (sortOption === "Category") return String(a.category).localeCompare(String(b.category));
+      return String(a.title).localeCompare(String(b.title));
+    });
+  }, [categoryFilter, marketplace.genericItems, searchTerm, sortOption]);
 
   const filteredHero = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    return marketplace.heroListings.filter((listing) => {
+    const listings = marketplace.heroListings.filter((listing) => {
       const category = listing.category ?? listing.item?.marketplaceCategory ?? "Electronics";
       const matchesSearch =
         !query ||
@@ -677,9 +743,28 @@ function MarketplaceView({
           .includes(query);
       const matchesCategory = categoryFilter === "All categories" || category === categoryFilter;
       const matchesGrade = gradeFilter === "All grades" || listing.grade?.grade === gradeFilter;
-      return matchesSearch && matchesCategory && matchesGrade;
+      const matchesQueue =
+        queueFilter === "All queues" ||
+        (queueFilter === "Open queue" && !listing.queueFilled) ||
+        (queueFilter === "Queue filled" && listing.queueFilled);
+      return matchesSearch && matchesCategory && matchesGrade && matchesQueue;
     });
-  }, [categoryFilter, gradeFilter, marketplace.heroListings, searchTerm]);
+    return [...listings].sort((a, b) => {
+      if (sortOption === "Newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortOption === "Price: low to high") return Number(a.price ?? 0) - Number(b.price ?? 0);
+      if (sortOption === "Price: high to low") return Number(b.price ?? 0) - Number(a.price ?? 0);
+      if (sortOption === "Grade") {
+        return (gradeRank[b.grade?.grade] ?? 0) - (gradeRank[a.grade?.grade] ?? 0);
+      }
+      if (sortOption === "Green credits") {
+        return Number(b.greenCredits?.buyerQueue ?? 0) - Number(a.greenCredits?.buyerQueue ?? 0);
+      }
+      if (sortOption === "Queue: open first") {
+        return Number(a.queueFilled) - Number(b.queueFilled);
+      }
+      return String(a.item?.title ?? "").localeCompare(String(b.item?.title ?? ""));
+    });
+  }, [categoryFilter, gradeFilter, marketplace.heroListings, queueFilter, searchTerm, sortOption]);
 
   const pageCount = Math.max(1, Math.ceil(filteredGeneric.length / pageSize));
   const safePage = Math.min(page, pageCount);
@@ -722,6 +807,34 @@ function MarketplaceView({
                 ))}
               </select>
             </label>
+            <label className="filter-control">
+              <span>Queue</span>
+              <select value={queueFilter} onChange={(event) => onQueueFilterChange(event.target.value)}>
+                {["All queues", "Open queue", "Queue filled"].map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-control">
+              <span>Sort</span>
+              <select value={sortOption} onChange={(event) => onSortChange(event.target.value)}>
+                {[
+                  "Newest",
+                  "Price: low to high",
+                  "Price: high to low",
+                  "Grade",
+                  "Green credits",
+                  "Queue: open first",
+                  "Category",
+                ].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         }
       />
@@ -738,6 +851,7 @@ function MarketplaceView({
               listing={listing}
               onAddToCart={onAddToCart}
               onOpen={onOpenListing}
+              signedInCustomerId={signedInCustomerId}
             />
           ))}
         </div>
@@ -788,7 +902,7 @@ function MarketplaceView({
   );
 }
 
-function MyListingsView({ listings, onAddToCart, onOpenListing }) {
+function MyListingsView({ listings, onAddToCart, onOpenListing, signedInCustomerId }) {
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
@@ -804,6 +918,7 @@ function MyListingsView({ listings, onAddToCart, onOpenListing }) {
               listing={listing}
               onAddToCart={onAddToCart}
               onOpen={onOpenListing}
+              signedInCustomerId={signedInCustomerId}
             />
           ))}
         </div>
@@ -821,12 +936,20 @@ function MyListingsView({ listings, onAddToCart, onOpenListing }) {
 function ImpactView({ marketplace, queueItems }) {
   const verifiedListings = marketplace.heroListings.length;
   const queuedCount = queueItems.length;
+  const queuedListings = marketplace.heroListings.filter((listing) => listing.queueFilled).length;
   const estimatedWeightKg = marketplace.heroListings.reduce(
     (sum, listing) => sum + Number(listing.item?.estimatedWeightKg ?? 0.4),
     0,
   );
   const avoidedHandlingEvents = verifiedListings + queuedCount;
   const estimatedEmissionsSaved = Math.max(0, Math.round(estimatedWeightKg * 18 + queuedCount * 1.5));
+  const greenCreditsInPlay = marketplace.heroListings.reduce(
+    (sum, listing) =>
+      sum +
+      Number(listing.greenCredits?.sellerListing ?? 0) +
+      (listing.queueFilled ? Number(listing.greenCredits?.buyerQueue ?? 0) : 0),
+    0,
+  );
 
   return (
     <main className="studio workspace-page c2c-workspace">
@@ -844,9 +967,15 @@ function ImpactView({ marketplace, queueItems }) {
         />
         <MetricCard
           label="Buyer queues"
-          value={queuedCount}
+          value={queuedCount || queuedListings}
           detail="Payment intent without charging before pickup review"
           Icon={ShieldCheck}
+        />
+        <MetricCard
+          label="Green credits"
+          value={greenCreditsInPlay}
+          detail="Seller credits plus buyer credits pending pickup review"
+          Icon={Leaf}
         />
         <MetricCard
           label="Estimated CO2e saved"
@@ -861,8 +990,8 @@ function ImpactView({ marketplace, queueItems }) {
           A seller listing increases order-proof inventory. A buyer joining the
           queue increases demand without collecting payment. Pickup verification
           would unlock payment and confirm the final item value. In production,
-          these events would be written to a ledger and recalculated from actual
-          pickup, delivery, and resale outcomes.
+          these events would be written to a green-credit ledger and recalculated
+          from actual pickup, delivery, resale, and avoided-disposal outcomes.
         </p>
       </section>
     </main>
@@ -886,7 +1015,7 @@ function SettingsView({
       <PageHeader
         eyebrow="Profile"
         title="Address unlocks buying and selling"
-        description="NexTurn uses saved buyer and seller addresses to estimate delivery fees. No live location is required, and India-only addresses are accepted in this prototype."
+        description="NexTurn uses saved buyer and seller addresses to estimate delivery fees. No live location is required, and India-only addresses are accepted."
       />
       <section className="panel settings-panel c2c-settings">
         <div className="settings-row">
@@ -983,7 +1112,7 @@ function SettingsView({
         <div className="settings-row">
           <span>
             <strong>Warehouse involvement</strong>
-            <small>Disabled by product rule. Seller holds item until sale.</small>
+            <small>Disabled by product rule. Seller holds item until pickup review.</small>
           </span>
           <Badge>No warehouse</Badge>
         </div>
@@ -1014,6 +1143,11 @@ function ListingDrawer({
 
   const isHero = listing.source === "nexturn-ai-graded";
   const isOwnListing = isHero && listing.sellerId === signedInCustomerId;
+  const localJoinedQueue = queueState?.interest?.listingId === listing.id;
+  const joinedQueue =
+    localJoinedQueue ||
+    (isHero && listing.queueFilled && listing.queueBuyerId === signedInCustomerId);
+  const queueFilledByOther = isHero && listing.queueFilled && !joinedQueue;
   const delivery = calculateDeliveryFee({
     buyerLocation,
     sellerLocation: listing.sellerLocation,
@@ -1039,7 +1173,7 @@ function ListingDrawer({
 
         {isHero ? (
           <div className="drawer-body">
-            <img className="drawer-hero-image" src={listing.image} alt="" />
+            <ListingImagePair listing={listing} />
             <div className="listing-price-block">
               <span>{listing.badge}</span>
               <strong>{formatMarketplaceCurrency(listing.price)}</strong>
@@ -1054,6 +1188,18 @@ function ListingDrawer({
                 {listing.item.asin}
               </p>
               <p>{listing.item.proofNote}</p>
+            </section>
+            <section className="proof-box green-credit-proof">
+              <h3>Green credit incentive</h3>
+              <p>
+                Seller earns {listing.greenCredits?.sellerListing ?? 0} credits for
+                listing a verified second-life item. Buyer earns{" "}
+                {listing.greenCredits?.buyerQueue ?? 0} credits after pickup review
+                confirms the item stays in circulation.
+              </p>
+              <p>
+                Estimated avoided impact: {listing.greenCredits?.estimatedCo2eKg ?? 0} kg CO2e.
+              </p>
             </section>
             <section className="proof-box">
               <h3>Seller and delivery route</h3>
@@ -1105,12 +1251,22 @@ function ListingDrawer({
               the delivery partner manually verifies the item during seller pickup.
             </p>
             <p className="seller-hold-note">{listing.logistics}</p>
-            {queueState?.interest?.listingId === listing.id ? (
+            {joinedQueue ? (
               <section className="payment-success">
                 <BadgeCheck size={22} />
-                <strong>Added to buyer queue</strong>
+                <strong>Joined buyer queue</strong>
                 <span>
-                  Payment is locked until pickup verification. Queue ID {queueState.interest.id}.
+                  Payment is locked until pickup verification.
+                  {queueState?.interest?.id ? ` Queue ID ${queueState.interest.id}.` : ""}
+                </span>
+              </section>
+            ) : queueFilledByOther ? (
+              <section className="payment-success queue-closed">
+                <ShieldCheck size={22} />
+                <strong>Queue filled</strong>
+                <span>
+                  Another buyer is first in line. Use the queue filter to find listings
+                  still open for pickup-review priority.
                 </span>
               </section>
             ) : (
@@ -1125,6 +1281,7 @@ function ListingDrawer({
                     !isSignedIn ||
                     !profileComplete ||
                     isOwnListing ||
+                    queueFilledByOther ||
                     queueState?.status === "loading" ||
                     !delivery.allowed
                   }
@@ -1137,6 +1294,8 @@ function ListingDrawer({
                       ? "Add address first"
                     : isOwnListing
                       ? "Your own listing"
+                    : queueFilledByOther
+                      ? "Queue filled"
                       : queueState?.status === "loading"
                         ? "Joining queue..."
                         : "Join buyer queue"}
@@ -1267,7 +1426,7 @@ function CompanyFooter() {
   return (
     <footer className="company-footer">
       <span>NexTurn Sustainable Commerce Labs</span>
-      <span>India C2C prototype · Built for Amazon-integrated resale workflows</span>
+      <span>India C2C network · Built for Amazon-integrated resale workflows</span>
       <a href="mailto:support@nexturn.example">support@nexturn.example</a>
       <span>© 2026 NexTurn. Demo marketplace, no real payments.</span>
     </footer>
@@ -1312,11 +1471,13 @@ export function App() {
   const [profileMessage, setProfileMessage] = useState("");
   const [isSavingProfile, setSavingProfile] = useState(false);
   const [queueItems, setQueueItems] = useState([]);
+  const [queueFilter, setQueueFilter] = useState("All queues");
   const [queueState, setQueueState] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedListing, setSelectedListing] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [sortOption, setSortOption] = useState("Newest");
   const [theme, setTheme] = useState("light");
 
   const isSignedIn = Boolean(auth.session);
@@ -1332,6 +1493,17 @@ export function App() {
       ),
     [marketplace.heroListings, signedInCustomerId],
   );
+  const greenCreditBalance = useMemo(() => {
+    const sellerCredits = myListings.reduce(
+      (sum, listing) => sum + Number(listing.greenCredits?.sellerListing ?? 0),
+      0,
+    );
+    const buyerCredits = queueItems.reduce(
+      (sum, item) => sum + Number(item.greenCreditsPending ?? 0),
+      0,
+    );
+    return sellerCredits + buyerCredits;
+  }, [myListings, queueItems]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1360,7 +1532,7 @@ export function App() {
 
   useEffect(() => {
     setPage(1);
-  }, [categoryFilter, gradeFilter, pageSize, searchTerm]);
+  }, [categoryFilter, gradeFilter, pageSize, queueFilter, searchTerm, sortOption]);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -1507,16 +1679,31 @@ export function App() {
     setQueueState({ status: "loading" });
     try {
       const result = await joinC2CInterestQueue(listing.id, normalizedProfile);
+      const queuedListing = result.listing ?? {
+        ...listing,
+        queueFilled: true,
+        queueStatus: "filled",
+        queueBuyerId: signedInCustomerId,
+        queueInterestId: result.interest?.id,
+        interestCount: 1,
+      };
       setQueueState({
         status: "success",
         interest: result.interest,
         message: result.customerMessage,
       });
       setQueueItems((current) =>
-        current.some((item) => item.id === result.interest.id)
+        !result.interest || current.some((item) => item.id === result.interest.id)
           ? current
           : [...current, result.interest],
       );
+      setSelectedListing(queuedListing);
+      setMarketplace((current) => ({
+        ...current,
+        heroListings: current.heroListings.map((item) =>
+          item.id === queuedListing.id ? queuedListing : item,
+        ),
+      }));
       await refreshMarketplace();
     } catch (error) {
       setQueueState({
@@ -1583,6 +1770,7 @@ export function App() {
         activeView={activeView}
         auth={auth}
         collapsed={isSidebarCollapsed}
+        greenCredits={greenCreditBalance}
         location={buyerLocation}
         onGoogleSignIn={() => handleSignIn("Google")}
         onNavigate={navigate}
@@ -1638,10 +1826,15 @@ export function App() {
           onOpenListing={handleOpenListing}
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
+          onQueueFilterChange={setQueueFilter}
           onSearch={setSearchTerm}
+          onSortChange={setSortOption}
           page={page}
           pageSize={pageSize}
+          queueFilter={queueFilter}
           searchTerm={searchTerm}
+          signedInCustomerId={signedInCustomerId}
+          sortOption={sortOption}
         />
       )}
       {activeView === "listings" && (
@@ -1649,6 +1842,7 @@ export function App() {
           listings={myListings}
           onAddToCart={handleAddToCart}
           onOpenListing={handleOpenListing}
+          signedInCustomerId={signedInCustomerId}
         />
       )}
       {activeView === "impact" && <ImpactView marketplace={marketplace} queueItems={queueItems} />}

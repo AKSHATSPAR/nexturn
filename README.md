@@ -37,10 +37,16 @@ sides of one unified account:
 - Global C2C marketplace that merges NexTurn AI-graded listings with 100+ public
   API background products from DummyJSON.
 - Listing detail drawer with transparent order proof, purchase date, AI
-  comparison result, preliminary price, delivery estimate, and "AI Graded &
-  Amazon Verified" badge.
+  comparison result, original product image, seller-upload image, preliminary
+  price, delivery estimate, and "AI Graded & Amazon Verified" badge.
+- Search, category, grade, queue-status, and sort controls for marketplace
+  browsing.
 - Buyer queue flow: buyers express interest, payment remains locked, and the
-  final value is confirmed only after manual pickup inspection.
+  final value is confirmed only after manual pickup inspection. A listing queue
+  becomes filled after the first buyer joins.
+- Green credits for sustainable C2C behavior: sellers earn credits for listing
+  order-proof-backed second-life items, and buyers earn pending credits after
+  pickup review confirms reuse.
 - DynamoDB persistence for customer profiles, created listings, and buyer queue
   interest records.
 - S3 media persistence and Rekognition permissions in the AWS CDK stack.
@@ -78,8 +84,9 @@ flowchart LR
    and sees the listing above the public API product feed.
 8. Buyer opens the listing, checks order proof, original purchase date,
    preliminary AI comparison, price, seller location, and estimated delivery fee.
-9. Buyer joins the buyer queue. Payment stays locked until an Amazon delivery
-   partner verifies the item at pickup and opens the final payment step.
+9. Buyer joins the buyer queue. The listing becomes queue-filled for other
+   users, payment stays locked, and green credits remain pending until an Amazon
+   delivery partner verifies the item at pickup and opens the final payment step.
 
 ## Local Development
 
