@@ -263,6 +263,17 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     });
   }
 
+  if (!listing.publishable) {
+    return json(422, {
+      error: "Item photo does not match order",
+      listingPreview: listing,
+      aiAnalysis,
+      media,
+      customerMessage:
+        "This photo appears to be a different product than the selected Amazon order item. Choose the matching order or upload the correct item photo before listing.",
+    });
+  }
+
   const persistence = await saveC2CListing({
     ...listing,
     uploadedImagePreview: undefined,

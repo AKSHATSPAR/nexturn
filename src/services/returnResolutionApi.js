@@ -25,9 +25,17 @@ function jsonHeaders() {
   };
 }
 
-function apiError(action, response) {
+async function apiError(action, response) {
   if (response.status === 401 || response.status === 403) {
     return new Error(`Sign in to ${action}.`);
+  }
+
+  try {
+    const details = await response.clone().json();
+    const message = details.customerMessage ?? details.message ?? details.error;
+    if (message) return new Error(message);
+  } catch {
+    // Keep the fallback concise when the response is not JSON.
   }
 
   return new Error(`${action} failed with ${response.status}`);
@@ -84,7 +92,7 @@ export async function evaluateScanUpload(file, scanOverrides = {}) {
   });
 
   if (!response.ok) {
-    throw apiError("run the AWS AI scan", response);
+    throw await apiError("run the AWS AI scan", response);
   }
 
   const payload = await response.json();
@@ -114,7 +122,7 @@ export async function lockRoute(routeId) {
   });
 
   if (!response.ok) {
-    throw apiError("lock this route", response);
+    throw await apiError("lock this route", response);
   }
 
   const payload = await response.json();
@@ -148,7 +156,7 @@ export async function connectExchangeToOrder(alternativeId) {
   });
 
   if (!response.ok) {
-    throw apiError("connect this exchange to the order", response);
+    throw await apiError("connect this exchange to the order", response);
   }
 
   const payload = await response.json();
@@ -181,7 +189,7 @@ export async function fetchC2COrders() {
   });
 
   if (!response.ok) {
-    throw apiError("load your Amazon-anchored order history", response);
+    throw await apiError("load your Amazon-anchored order history", response);
   }
 
   return response.json();
@@ -264,7 +272,7 @@ export async function evaluateC2CListingUpload(file, orderId, sellerCondition = 
   });
 
   if (!response.ok) {
-    throw apiError("grade this item for C2C resale", response);
+    throw await apiError("grade this item for C2C resale", response);
   }
 
   const result = await response.json();
@@ -295,7 +303,7 @@ export async function createC2CListing(file, orderId, sellerCondition = {}) {
   });
 
   if (!response.ok) {
-    throw apiError("publish this C2C listing", response);
+    throw await apiError("publish this C2C listing", response);
   }
 
   return response.json();
@@ -334,7 +342,7 @@ export async function checkoutC2CListing(listingId) {
   });
 
   if (!response.ok) {
-    throw apiError("complete this simulated C2C checkout", response);
+    throw await apiError("complete this simulated C2C checkout", response);
   }
 
   return response.json();

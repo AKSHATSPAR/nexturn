@@ -157,11 +157,11 @@ export function gradeScorecard(scorecard) {
 
   if (identityMismatch) {
     return {
-      grade: "C",
-      label: "Manual review",
+      grade: "Mismatch",
+      label: "Wrong item",
       score: Math.min(score, 55),
       confidence: "Manual review",
-      summary: "Uploaded evidence does not match the Amazon order metadata.",
+      summary: "Uploaded photo does not match the selected Amazon order item.",
     };
   }
 
@@ -225,6 +225,15 @@ export function gradeScorecard(scorecard) {
 }
 
 export function calculateDiscountedPrice(originalPrice, grade) {
+  if (grade.grade === "Mismatch") {
+    return {
+      price: 0,
+      discountPercent: 100,
+      deliveryFee: DELIVERY_FEE,
+      buyerTotal: 0,
+    };
+  }
+
   const depreciationByGrade = {
     A: 0.74,
     "A-": 0.68,
@@ -260,6 +269,7 @@ export function createListingFromEvaluation({
   });
   const grade = gradeScorecard(scorecard);
   const pricing = calculateDiscountedPrice(order.originalPrice, grade);
+  const publishable = aiAnalysis?.identityStatus !== "mismatch";
   const now = new Date().toISOString();
   const listingId = `nt_${order.id.replace(/[^0-9]/g, "")}_${Date.now().toString(36)}`;
 
@@ -269,7 +279,7 @@ export function createListingFromEvaluation({
     sellerName: identity.name ?? "NexTurn seller",
     sellerEmail: identity.email,
     sellerNeighborhood: identity.neighborhood ?? "Local pickup zone",
-    status: "active",
+    status: publishable ? "active" : "blocked_identity_mismatch",
     createdAt: now,
     source: "nexturn-ai-graded",
     item: order,
@@ -282,7 +292,11 @@ export function createListingFromEvaluation({
     price: pricing.price,
     discountPercent: pricing.discountPercent,
     deliveryFee: pricing.deliveryFee,
-    badge: "AI Graded & Amazon Verified",
+    badge: publishable ? "AI Graded & Amazon Verified" : "Photo does not match order",
+    publishable,
+    blockingReason: publishable
+      ? null
+      : "The uploaded photo appears to be a different product than the selected Amazon order item.",
     logistics:
       "No warehouse involved. Seller keeps the item at home until a buyer pays; Amazon delivery partner checks quality at pickup and delivers to the buyer.",
     settlement: {

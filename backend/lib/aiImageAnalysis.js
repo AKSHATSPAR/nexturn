@@ -10,18 +10,41 @@ const categoryTerms = {
     "earbud",
     "earbuds",
     "earphone",
-    "electronics",
+    "earphones",
     "headphone",
     "headphones",
     "headset",
     "microphone",
   ],
-  camera: ["camera", "electronics", "lens", "photography"],
-  laptop: ["computer", "electronics", "keyboard", "laptop", "macbook", "notebook", "pc"],
-  phone: ["cell phone", "electronics", "iphone", "mobile phone", "phone", "smartphone"],
-  tablet: ["computer", "electronics", "ipad", "screen", "tablet"],
-  wearable: ["electronics", "smartwatch", "watch", "wearable", "wristwatch"],
+  camera: ["camera", "lens", "photography"],
+  laptop: ["keyboard", "laptop", "macbook", "notebook"],
+  phone: ["cell phone", "iphone", "mobile phone", "phone", "smartphone"],
+  tablet: ["ipad", "tablet"],
+  wearable: ["smartwatch", "watch", "wearable", "wristwatch"],
 };
+const weakIdentityTerms = new Set([
+  "accessory",
+  "black",
+  "computer",
+  "consumer",
+  "device",
+  "electronic",
+  "electronics",
+  "gadget",
+  "gray",
+  "grey",
+  "hand",
+  "hardware",
+  "mobile",
+  "object",
+  "portable",
+  "product",
+  "screen",
+  "silver",
+  "technology",
+  "white",
+  "wireless",
+]);
 
 let rekognitionClient;
 let s3Client;
@@ -125,21 +148,86 @@ function labelText(label) {
   return [label.name ?? label.Name, ...parents].join(" ").toLowerCase();
 }
 
+function textContainsTerm(text, term) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text);
+}
+
+function uniqueTermsFromText(text = "") {
+  return [
+    ...new Set(
+      String(text)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(" ")
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 3 && !weakIdentityTerms.has(term)),
+    ),
+  ];
+}
+
+function expectedProductTerms(returnCase) {
+  const category = returnCase.item.category;
+  const categorySpecific = categoryTerms[category] ?? [category];
+  const metadataTerms = uniqueTermsFromText(
+    [
+      returnCase.item.title,
+      returnCase.item.brandLine,
+      returnCase.item.variant,
+      returnCase.item.sku,
+    ].join(" "),
+  );
+
+  return [
+    ...new Set(
+      [...categorySpecific, ...metadataTerms]
+        .map((term) => term.toLowerCase().trim())
+        .filter((term) => term.length >= 3 && !weakIdentityTerms.has(term)),
+    ),
+  ];
+}
+
 function isRelevantLabel(label, category) {
   const expectedTerms = categoryTerms[category] ?? [category];
   const text = labelText(label);
-  return expectedTerms.some((term) => text.includes(term));
+  return expectedTerms.some((term) => textContainsTerm(text, term));
+}
+
+export function compareLabelsToExpectedItem(labels, returnCase) {
+  const expectedTerms = expectedProductTerms(returnCase);
+  const detectedText = labels.map((label) => labelText(label)).join(" | ");
+  const relevant = labels.filter((label) => isRelevantLabel(label, returnCase.item.category));
+  const matchedTerms = expectedTerms.filter((term) => textContainsTerm(detectedText, term));
+  const strongMatchCount = matchedTerms.filter((term) => !weakIdentityTerms.has(term)).length;
+  const matchScore = Math.min(100, relevant.length * 35 + strongMatchCount * 18);
+  const identityStatus =
+    relevant.length > 0 || matchScore >= 45
+      ? "matched"
+      : labels.length
+        ? "mismatch"
+        : "unknown";
+
+  return {
+    expectedTerms,
+    matchedTerms,
+    matchScore,
+    relevant,
+    ignored: labels.filter((label) => !relevant.includes(label)),
+    identityStatus,
+    method: "rekognition-labels-vs-order-metadata",
+  };
 }
 
 function splitLabelsByExpectedItem(labels, returnCase) {
+  const comparison = compareLabelsToExpectedItem(labels, returnCase);
   const relevant = labels.filter((label) => isRelevantLabel(label, returnCase.item.category));
   const ignored = labels.filter((label) => !isRelevantLabel(label, returnCase.item.category));
-  const identityStatus = relevant.length ? "matched" : labels.length ? "mismatch" : "unknown";
 
   return {
     relevant,
     ignored,
-    identityStatus,
+    identityStatus: comparison.identityStatus,
+    comparison,
   };
 }
 
@@ -185,10 +273,93 @@ function formatLabels(labels) {
     .map((label) => `${label.name ?? label.Name} ${Math.round(label.confidence ?? label.Confidence ?? 0)}%`);
 }
 
+async function detectLabelsFromBytes(bytes) {
+  const response = await getRekognitionClient().send(
+    new DetectLabelsCommand({
+      Image: {
+        Bytes: bytes,
+      },
+      MaxLabels: 20,
+      MinConfidence: 50,
+    }),
+  );
+
+  return (
+    response.Labels?.map((label) => ({
+      name: label.Name,
+      confidence: Number((label.Confidence ?? 0).toFixed(1)),
+      parents: label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [],
+    })) ?? []
+  );
+}
+
+async function detectReferenceImageLabels(returnCase) {
+  const imageUrl = returnCase.item.image;
+  if (!imageUrl?.startsWith("http")) {
+    return {
+      compared: false,
+      reason: "Reference image is local to the frontend build.",
+    };
+  }
+
+  try {
+    const response = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) {
+      throw new Error(`Reference image returned ${response.status}`);
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.byteLength > MAX_IMAGE_BYTES) {
+      throw new Error("Reference image is empty or too large for comparison.");
+    }
+
+    return {
+      compared: true,
+      labels: await detectLabelsFromBytes(bytes),
+      imageUrl,
+    };
+  } catch (error) {
+    return {
+      compared: false,
+      imageUrl,
+      reason: error.message,
+    };
+  }
+}
+
+function labelTermSet(labels) {
+  return new Set(
+    labels.flatMap((label) => uniqueTermsFromText(labelText(label))),
+  );
+}
+
+function compareUploadedToReference({ uploadedLabels, referenceLabels = [] }) {
+  if (!referenceLabels.length) {
+    return {
+      compared: false,
+      similarity: 0,
+      overlappingTerms: [],
+    };
+  }
+
+  const uploadedTerms = labelTermSet(uploadedLabels);
+  const referenceTerms = labelTermSet(referenceLabels);
+  const overlappingTerms = [...referenceTerms].filter((term) => uploadedTerms.has(term));
+  const denominator = Math.max(1, Math.min(referenceTerms.size, uploadedTerms.size));
+
+  return {
+    compared: true,
+    similarity: Math.round((overlappingTerms.length / denominator) * 100),
+    overlappingTerms,
+  };
+}
+
 function summarizeRelevantLabels({ relevant, ignored, identityStatus, returnCase }) {
   if (identityStatus === "mismatch") {
     const rawLabels = formatLabels(ignored);
-    return `Visual identity check did not match the expected ${returnCase.item.category} return. Manual review required${
+    return `Uploaded photo does not match the selected Amazon order item (${returnCase.item.title}). Choose the correct order or upload the correct product photo${
       rawLabels.length ? `; unrelated labels seen: ${rawLabels.join(", ")}.` : "."
     }`;
   }
@@ -242,23 +413,13 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
   }
 
   try {
-    const response = await getRekognitionClient().send(
-      new DetectLabelsCommand({
-        Image: {
-          Bytes: decoded.bytes,
-        },
-        MaxLabels: 15,
-        MinConfidence: 50,
-      }),
-    );
-
-    const rawLabels =
-      response.Labels?.map((label) => ({
-        name: label.Name,
-        confidence: Number((label.Confidence ?? 0).toFixed(1)),
-        parents: label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [],
-      })) ?? [];
-    const { relevant, ignored, identityStatus } = splitLabelsByExpectedItem(
+    const rawLabels = await detectLabelsFromBytes(decoded.bytes);
+    const reference = await detectReferenceImageLabels(returnCase);
+    const referenceComparison = compareUploadedToReference({
+      uploadedLabels: rawLabels,
+      referenceLabels: reference.labels,
+    });
+    const { relevant, ignored, identityStatus, comparison } = splitLabelsByExpectedItem(
       rawLabels,
       returnCase,
     );
@@ -274,6 +435,18 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
             ? "Expected product visually matched"
             : "Needs manual identity review",
         identityStatus,
+        identityComparison: {
+          ...comparison,
+          method: referenceComparison.compared
+            ? "rekognition-upload-vs-order-photo-and-metadata"
+            : comparison.method,
+          referenceImageCompared: referenceComparison.compared,
+          referenceImageUrl: reference.imageUrl,
+          referenceImageReason: reference.reason,
+          referenceSimilarity: referenceComparison.similarity,
+          referenceOverlappingTerms: referenceComparison.overlappingTerms,
+          referenceLabels: reference.labels ?? [],
+        },
         labels: relevant,
         ignoredLabels: ignored,
         rawLabels,

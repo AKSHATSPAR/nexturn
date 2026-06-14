@@ -269,6 +269,13 @@
   border-color: rgba(15, 141, 70, 0.45);
 }
 
+.condition-hint-copy {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .upload-dropzone {
   position: relative;
   display: grid;
@@ -389,6 +396,31 @@
   color: var(--green);
   font-size: 58px;
   line-height: 1;
+}
+
+.evaluation-panel.blocked .evaluation-heading strong {
+  color: var(--danger);
+  font-size: 42px;
+}
+
+.identity-block-note {
+  margin: 0 0 14px;
+  padding: 12px;
+  color: #7c2b1f;
+  background: #ffebe7;
+  border: 1px solid rgba(212, 87, 66, 0.28);
+  border-radius: 8px;
+  line-height: 1.45;
+}
+
+.ai-summary-note {
+  margin: 0 0 14px;
+  padding: 12px;
+  color: #34424c;
+  background: #f5f7f6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  line-height: 1.45;
 }
 
 .price-split {
@@ -1186,6 +1218,11 @@ h1 {
 .badge-amber {
   color: #744500;
   background: #fff5df;
+}
+
+.badge-danger {
+  color: #8c2a1d;
+  background: #ffebe7;
 }
 
 .workspace-page {

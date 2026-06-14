@@ -303,24 +303,36 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
   }
 
   const listing = evaluation.listingPreview;
+  const isBlocked = listing.publishable === false;
 
   return (
-    <section className="panel evaluation-panel">
+    <section className={`panel evaluation-panel ${isBlocked ? "blocked" : ""}`}>
       <div className="evaluation-heading">
         <div>
-          <span>AI grading complete</span>
+          <span>{isBlocked ? "Product identity mismatch" : "AI grading complete"}</span>
           <strong>{listing.grade.grade}</strong>
           <small>{listing.grade.summary}</small>
         </div>
-        <Badge tone={listing.grade.grade === "C" ? "amber" : "green"}>
+        <Badge tone={isBlocked ? "danger" : listing.grade.grade === "C" ? "amber" : "green"}>
           {listing.grade.confidence}
         </Badge>
       </div>
+      {isBlocked && (
+        <p className="identity-block-note">
+          {listing.blockingReason} NexTurn will not list this item until the uploaded
+          photo matches the selected Amazon order.
+        </p>
+      )}
+      {evaluation.aiAnalysis?.summary && (
+        <p className="ai-summary-note">{evaluation.aiAnalysis.summary}</p>
+      )}
       <div className="price-split">
-        <span>Auto discounted price</span>
-        <strong>{formatMarketplaceCurrency(listing.price)}</strong>
+        <span>{isBlocked ? "Listing status" : "Auto discounted price"}</span>
+        <strong>{isBlocked ? "Blocked" : formatMarketplaceCurrency(listing.price)}</strong>
         <small>
-          {listing.discountPercent}% below original {formatMarketplaceCurrency(listing.item.originalPrice)}
+          {isBlocked
+            ? "Wrong-product uploads are stopped before marketplace publishing."
+            : `${listing.discountPercent}% below original ${formatMarketplaceCurrency(listing.item.originalPrice)}`}
         </small>
       </div>
       <div className="scorecard-grid">
@@ -341,10 +353,15 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
       <button
         className="primary-action"
         type="button"
-        disabled={isPublishing}
+        disabled={isPublishing || isBlocked}
         onClick={onPublish}
       >
-        <Store size={17} /> {isPublishing ? "Publishing..." : "List on NexTurn Marketplace"}
+        <Store size={17} />{" "}
+        {isBlocked
+          ? "Cannot list mismatched item"
+          : isPublishing
+            ? "Publishing..."
+            : "List on NexTurn Marketplace"}
       </button>
     </section>
   );
@@ -439,6 +456,10 @@ function SellHubView({
             value={sellerCondition.preset}
             onChange={(preset) => onConditionChange({ preset })}
           />
+          <p className="condition-hint-copy">
+            Optional seller condition hint. AI identity matching still decides whether
+            the photo belongs to this order.
+          </p>
           <label className="upload-dropzone">
             <input
               type="file"

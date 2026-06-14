@@ -34,6 +34,11 @@ system:
 - purchase-fit ranking: refurbished alternatives ranked by customer preference
   and predicted return risk.
 
+The visible condition chips in the seller UI are seller-declared hints, not the
+source of truth. They help the prototype express obvious packaging/wear cases,
+but they cannot override the AI identity gate. If the uploaded photo looks like
+a phone while the selected order is AirPods Max, NexTurn blocks listing.
+
 This makes the demo deterministic, testable, and safe for judges to repeat.
 
 ## AWS AI Path Implemented
@@ -45,7 +50,7 @@ The implemented path already feeds the same engine with AWS AI-derived signals:
 3. Compare labels with the expected returned item category. Relevant labels add
    identity/accessory context; unrelated labels are shown as ignored evidence.
 4. For C2C, compare upload evidence against the selected fake Amazon order
-   metadata.
+   metadata and, when possible, the original order image labels.
 5. If uploaded evidence does not match the expected item, lower identity score
    and route the listing toward manual review.
 6. If the selected condition or evidence includes broken/cracked screen signals,
@@ -85,6 +90,10 @@ AI evidence, and used to increase the fraud-risk input before the scorecard runs
 This is also why a broken phone screen does not stay highly graded. The C2C
 scorecard clamps functional and cosmetic scores when broken-screen evidence is
 declared or detected, producing a low grade and a steep discount.
+
+The matching logic intentionally ignores broad labels such as `Electronics` or
+`Device` for identity. A generic electronics label is not enough proof that the
+uploaded product is the same item from the selected order.
 
 ## Why Keep the Rule Layer
 
