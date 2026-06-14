@@ -188,3 +188,162 @@ export async function saveExchangeConnection(returnCase, alternative, exchangeIn
 
   return { mode: "dynamodb", persisted: true, tableName };
 }
+
+export async function saveC2CListing(listing) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false };
+  }
+
+  const { PutCommand } = await import("@aws-sdk/lib-dynamodb");
+  const now = new Date().toISOString();
+
+  await client.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        ...listing,
+        pk: `LISTING#${listing.id}`,
+        sk: "PROFILE",
+        entityType: "C2CListing",
+        listingId: listing.id,
+        customerId: listing.sellerId,
+        marketplaceStatus: `LISTING#${listing.status.toUpperCase()}`,
+        routeStatus: `marketplace#${listing.status.toUpperCase()}`,
+        updatedAt: now,
+      },
+    }),
+  );
+
+  return { mode: "dynamodb", persisted: true, tableName };
+}
+
+export async function listC2CListings() {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false, listings: [] };
+  }
+
+  const { QueryCommand } = await import("@aws-sdk/lib-dynamodb");
+  const response = await client.send(
+    new QueryCommand({
+      TableName: tableName,
+      IndexName: "MarketplaceIndex",
+      KeyConditionExpression: "marketplaceStatus = :active",
+      ExpressionAttributeValues: {
+        ":active": "LISTING#ACTIVE",
+      },
+      ScanIndexForward: false,
+      Limit: 50,
+    }),
+  );
+
+  return {
+    mode: "dynamodb",
+    persisted: true,
+    tableName,
+    listings: response.Items ?? [],
+  };
+}
+
+export async function getC2CListing(listingId) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false, listing: null };
+  }
+
+  const { GetCommand } = await import("@aws-sdk/lib-dynamodb");
+  const response = await client.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        pk: `LISTING#${listingId}`,
+        sk: "PROFILE",
+      },
+    }),
+  );
+
+  return {
+    mode: "dynamodb",
+    persisted: Boolean(response.Item),
+    tableName,
+    listing: response.Item ?? null,
+  };
+}
+
+export async function saveC2CCheckout(listing, receipt) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false };
+  }
+
+  const { TransactWriteCommand } = await import("@aws-sdk/lib-dynamodb");
+  const now = new Date().toISOString();
+  const isPersistedListing = !listing.id.startsWith("seed_");
+  const transactItems = [
+    {
+      Put: {
+        TableName: tableName,
+        Item: {
+          ...receipt,
+          pk: `CHECKOUT#${receipt.id}`,
+          sk: "RECEIPT",
+          entityType: "C2CCheckout",
+          customerId: receipt.buyerId,
+          marketplaceStatus: "CHECKOUT#PAID",
+          routeStatus: "checkout#PAID",
+          updatedAt: now,
+        },
+      },
+    },
+    {
+      Put: {
+        TableName: tableName,
+        Item: {
+          pk: `CUSTOMER#${receipt.buyerId}`,
+          sk: `PURCHASE#${receipt.id}`,
+          entityType: "C2CPurchaseLink",
+          customerId: receipt.buyerId,
+          listingId: listing.id,
+          itemTitle: receipt.itemTitle,
+          sellerId: receipt.sellerId,
+          totalPaid: receipt.totalPaid,
+          status: receipt.status,
+          updatedAt: now,
+        },
+      },
+    },
+  ];
+
+  if (isPersistedListing) {
+    transactItems.push({
+      Update: {
+        TableName: tableName,
+        Key: {
+          pk: `LISTING#${listing.id}`,
+          sk: "PROFILE",
+        },
+        UpdateExpression:
+          "SET #status = :sold, marketplaceStatus = :marketplaceStatus, routeStatus = :routeStatus, soldTo = :buyerId, soldAt = :now, updatedAt = :now",
+        ExpressionAttributeNames: {
+          "#status": "status",
+        },
+        ExpressionAttributeValues: {
+          ":sold": "sold",
+          ":marketplaceStatus": "LISTING#SOLD",
+          ":routeStatus": "marketplace#SOLD",
+          ":buyerId": receipt.buyerId,
+          ":now": now,
+        },
+      },
+    });
+  }
+
+  await client.send(
+    new TransactWriteCommand({
+      TransactItems: transactItems,
+    }),
+  );
+
+  return { mode: "dynamodb", persisted: true, tableName };
+}

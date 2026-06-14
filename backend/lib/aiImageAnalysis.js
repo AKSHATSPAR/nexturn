@@ -6,6 +6,7 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const categoryTerms = {
   audio: [
     "audio",
+    "airpods",
     "earbud",
     "earbuds",
     "earphone",
@@ -15,6 +16,11 @@ const categoryTerms = {
     "headset",
     "microphone",
   ],
+  camera: ["camera", "electronics", "lens", "photography"],
+  laptop: ["computer", "electronics", "keyboard", "laptop", "macbook", "notebook", "pc"],
+  phone: ["cell phone", "electronics", "iphone", "mobile phone", "phone", "smartphone"],
+  tablet: ["computer", "electronics", "ipad", "screen", "tablet"],
+  wearable: ["electronics", "smartwatch", "watch", "wearable", "wristwatch"],
 };
 
 let rekognitionClient;
@@ -139,8 +145,9 @@ function splitLabelsByExpectedItem(labels, returnCase) {
 
 function buildSignals(labels, returnCase) {
   const labelNames = labels.map((label) => labelText(label));
-  const hasAudioProduct = labelNames.some((label) =>
-    ["headphone", "headphones", "headset", "electronics", "audio"].some((term) =>
+  const expectedTerms = categoryTerms[returnCase.item.category] ?? [returnCase.item.category];
+  const hasExpectedProduct = labelNames.some((label) =>
+    expectedTerms.some((term) =>
       label.includes(term),
     ),
   );
@@ -152,8 +159,10 @@ function buildSignals(labels, returnCase) {
   );
 
   const signals = [];
-  if (hasAudioProduct) {
-    signals.push("Visual identity check matched the expected audio/electronics item");
+  if (hasExpectedProduct) {
+    signals.push(
+      `Visual identity check matched the expected ${returnCase.item.category} item`,
+    );
   }
   if (hasAccessory) {
     signals.push("Visual evidence includes accessory-like objects");

@@ -159,3 +159,183 @@ export async function connectExchangeToOrder(alternativeId) {
     message: payload.customerMessage ?? "Exchange option connected to order.",
   };
 }
+
+export async function fetchC2COrders() {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl === null) {
+    const { ordersForCustomer } = await import("../lib/c2cCommerce.js");
+    return {
+      mode: "local",
+      orders: ordersForCustomer({
+        customerId: "local_customer",
+        email: "local@nexturn.local",
+        name: "Local Customer",
+      }),
+      customerMessage: "Local order history loaded from fixtures.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/orders`, {
+    headers: jsonHeaders(),
+  });
+
+  if (!response.ok) {
+    throw apiError("load your Amazon-anchored order history", response);
+  }
+
+  return response.json();
+}
+
+export async function fetchC2CMarketplace() {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl === null) {
+    const { buildFallbackMarketplace } = await import("../lib/c2cCommerce.js");
+    return buildFallbackMarketplace();
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/marketplace`);
+
+  if (!response.ok) {
+    throw new Error(`Marketplace fetch failed with ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function buildListingPayload(file, orderId, sellerCondition = {}) {
+  const imageBase64 = file ? await readFileAsDataUrl(file) : undefined;
+
+  return {
+    orderId,
+    sellerCondition,
+    fileName: file?.name,
+    mimeType: file?.type,
+    imageBase64,
+  };
+}
+
+export async function evaluateC2CListingUpload(file, orderId, sellerCondition = {}) {
+  const apiBaseUrl = getApiBaseUrl();
+  const payload = await buildListingPayload(file, orderId, sellerCondition);
+
+  if (apiBaseUrl === null) {
+    const {
+      createListingFromEvaluation,
+      findCustomerOrder,
+    } = await import("../lib/c2cCommerce.js");
+    const order = findCustomerOrder(orderId, { customerId: "local_customer" });
+    const aiAnalysis = {
+      provider: "local-preview",
+      mode: "browser-only",
+      usedAws: false,
+      identityStatus: "unknown",
+      labels: [],
+      summary: "Local preview mode. Deploy or set VITE_NEXTURN_API_URL for AWS AI.",
+    };
+
+    return {
+      mode: "local",
+      listingPreview: createListingFromEvaluation({
+        aiAnalysis,
+        identity: {
+          customerId: "local_customer",
+          name: "Local Customer",
+          email: "local@nexturn.local",
+        },
+        order,
+        sellerCondition: {
+          ...sellerCondition,
+          fileName: file?.name,
+        },
+        uploadedImagePreview: payload.imageBase64,
+      }),
+      aiAnalysis,
+      media: { persisted: false, mode: "local-preview" },
+      customerMessage: "Local preview generated without persistence.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/listings/evaluate`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw apiError("grade this item for C2C resale", response);
+  }
+
+  const result = await response.json();
+  return {
+    ...result,
+    imagePreview: payload.imageBase64,
+  };
+}
+
+export async function createC2CListing(file, orderId, sellerCondition = {}) {
+  const apiBaseUrl = getApiBaseUrl();
+  const payload = await buildListingPayload(file, orderId, sellerCondition);
+
+  if (apiBaseUrl === null) {
+    const preview = await evaluateC2CListingUpload(file, orderId, sellerCondition);
+    return {
+      ...preview,
+      persisted: false,
+      listing: preview.listingPreview,
+      customerMessage: "Local listing preview created. Deploy to publish globally.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/listings`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw apiError("publish this C2C listing", response);
+  }
+
+  return response.json();
+}
+
+export async function checkoutC2CListing(listingId) {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl === null) {
+    const {
+      createCheckoutReceipt,
+      seedC2CListings,
+    } = await Promise.all([
+      import("../lib/c2cCommerce.js"),
+      import("../data/c2cCommerce.js"),
+    ]).then(([lib, data]) => ({
+      createCheckoutReceipt: lib.createCheckoutReceipt,
+      seedC2CListings: data.seedC2CListings,
+    }));
+    const listing = seedC2CListings.find((item) => item.id === listingId);
+
+    return {
+      receipt: createCheckoutReceipt({
+        buyerIdentity: { customerId: "local_buyer", email: "local@nexturn.local" },
+        listing,
+      }),
+      persistence: { mode: "local", persisted: false },
+      customerMessage: "Local checkout simulated.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/checkout`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ listingId }),
+  });
+
+  if (!response.ok) {
+    throw apiError("complete this simulated C2C checkout", response);
+  }
+
+  return response.json();
+}

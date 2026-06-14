@@ -9,10 +9,24 @@ import {
 import { formatCurrency, summarizeDecision } from "../../src/lib/decisionEngine.js";
 import { analyzeReturnImage } from "../lib/aiImageAnalysis.js";
 import {
+  getC2CListing,
+  listC2CListings,
+  saveC2CCheckout,
+  saveC2CListing,
   saveExchangeConnection,
   saveRouteSelection,
   saveScanEvaluation,
 } from "../lib/dynamodbRepository.js";
+import {
+  buildFallbackMarketplace,
+  buildGenericFallbackItems,
+  createCheckoutReceipt,
+  createListingFromEvaluation,
+  findCustomerOrder,
+  mergeMarketplaceListings,
+  ordersForCustomer,
+} from "../../src/lib/c2cCommerce.js";
+import { seedC2CListings } from "../../src/data/c2cCommerce.js";
 
 const headers = {
   "access-control-allow-origin": "*",
@@ -65,6 +79,21 @@ function getIdentity(event = {}) {
   };
 }
 
+function requireIdentity(event) {
+  const identity = getIdentity(event);
+  if (!identity.isAuthenticated) {
+    return {
+      error: json(401, {
+        error: "Authentication required",
+        message: "Sign in to use NexTurn C2C buying and selling.",
+      }),
+      identity,
+    };
+  }
+
+  return { identity };
+}
+
 function caseForIdentity(identity) {
   return {
     ...returnCase,
@@ -110,6 +139,214 @@ function numberOrFallback(value, fallback) {
 
 function mergeInspectionSignals(existingSignals, aiSignals) {
   return [...new Set([...(existingSignals ?? []), ...(aiSignals ?? [])])];
+}
+
+function orderToReturnCase(order, identity) {
+  return {
+    id: `c2c_${order.id}`,
+    customer: {
+      id: identity.customerId,
+      name: identity.name,
+      email: identity.email,
+    },
+    item: {
+      sku: order.asin,
+      title: order.title,
+      brandLine: order.model,
+      variant: order.variant,
+      originalPrice: order.originalPrice,
+      estimatedWeightKg: order.estimatedWeightKg,
+      category: order.category,
+      image: order.image,
+      gallery: [order.image],
+    },
+  };
+}
+
+async function fetchGenericMarketplaceItems() {
+  if (process.env.NEX_TURN_DISABLE_PUBLIC_MARKETPLACE === "true") {
+    return {
+      source: "local-fallback",
+      items: buildGenericFallbackItems(),
+    };
+  }
+
+  try {
+    const response = await fetch("https://dummyjson.com/products?limit=120&select=id,title,price,thumbnail,category,rating");
+    if (!response.ok) throw new Error(`DummyJSON returned ${response.status}`);
+    const payload = await response.json();
+    const items = (payload.products ?? []).map((product) => ({
+      id: `dummy_${product.id}`,
+      source: "dummyjson",
+      title: product.title,
+      category: product.category,
+      price: product.price,
+      image: product.thumbnail,
+      rating: product.rating,
+      badge: "Marketplace item",
+    }));
+
+    if (items.length >= 100) {
+      return {
+        source: "dummyjson",
+        items,
+      };
+    }
+  } catch {
+    // Fall through to deterministic local filler so the marketplace never looks empty.
+  }
+
+  return {
+    source: "local-fallback",
+    items: buildGenericFallbackItems(),
+  };
+}
+
+async function buildMarketplacePayload() {
+  const [listingResult, genericResult] = await Promise.all([
+    listC2CListings(),
+    fetchGenericMarketplaceItems(),
+  ]);
+  const merged = mergeMarketplaceListings(listingResult.listings, genericResult.items);
+
+  return {
+    ...merged,
+    persistence: {
+      mode: listingResult.mode,
+      persisted: listingResult.persisted,
+    },
+    genericSource: genericResult.source,
+    marketplaceRule:
+      "Direct C2C: no warehouse. Seller keeps the item until a buyer pays, then Amazon facilitates pickup, quality check, and delivery.",
+  };
+}
+
+async function evaluateC2CListing(body, event, { persist = false } = {}) {
+  const auth = requireIdentity(event);
+  if (auth.error) return auth.error;
+
+  const order = findCustomerOrder(body.orderId, auth.identity);
+  if (!order) {
+    return json(404, {
+      error: "Order not found",
+      message: "Choose an item from the signed-in customer's fake Amazon order history.",
+    });
+  }
+
+  const sellerCondition = {
+    ...(body.sellerCondition ?? {}),
+    fileName: body.fileName,
+  };
+  const { aiAnalysis, media } = await analyzeReturnImage({
+    returnCase: orderToReturnCase(order, auth.identity),
+    imageBase64: body.imageBase64,
+    mimeType: body.mimeType,
+    fileName: body.fileName,
+  });
+  const listing = createListingFromEvaluation({
+    aiAnalysis,
+    identity: auth.identity,
+    media,
+    order,
+    sellerCondition,
+    uploadedImagePreview: body.imageBase64,
+  });
+
+  if (!persist) {
+    return json(200, {
+      order,
+      listingPreview: listing,
+      aiAnalysis,
+      media,
+      customerMessage:
+        "AI grading complete. The item is still with you; list it only when you are ready for buyer checkout and pickup.",
+    });
+  }
+
+  const persistence = await saveC2CListing({
+    ...listing,
+    uploadedImagePreview: undefined,
+  });
+
+  return json(201, {
+    listing: {
+      ...listing,
+      uploadedImagePreview: undefined,
+    },
+    aiAnalysis,
+    media,
+    persistence,
+    customerMessage:
+      "Listed on NexTurn Marketplace. Keep the item at home until a buyer purchases it; Amazon delivery verifies quality at pickup.",
+  });
+}
+
+async function getC2CListingPayload(listingId) {
+  if (!listingId) {
+    return json(422, {
+      error: "listingId is required",
+    });
+  }
+
+  const persisted = await getC2CListing(listingId);
+  const listing =
+    persisted.listing ?? seedC2CListings.find((item) => item.id === listingId) ?? null;
+
+  if (!listing) {
+    return json(404, {
+      error: "Listing not found",
+    });
+  }
+
+  return json(200, {
+    listing,
+    persistence: {
+      mode: persisted.mode,
+      persisted: Boolean(persisted.listing),
+    },
+  });
+}
+
+async function checkoutC2CListing(body, event) {
+  const auth = requireIdentity(event);
+  if (auth.error) return auth.error;
+
+  const persisted = await getC2CListing(body.listingId);
+  const listing =
+    persisted.listing ?? seedC2CListings.find((item) => item.id === body.listingId) ?? null;
+
+  if (!listing) {
+    return json(404, {
+      error: "Listing not found",
+    });
+  }
+
+  if (listing.status !== "active") {
+    return json(409, {
+      error: "Listing unavailable",
+      message: "This item is no longer available for C2C checkout.",
+    });
+  }
+
+  if (listing.sellerId === auth.identity.customerId) {
+    return json(422, {
+      error: "Cannot buy your own listing",
+      message: "Use a different signed-in buyer account to complete the C2C purchase.",
+    });
+  }
+
+  const receipt = createCheckoutReceipt({
+    buyerIdentity: auth.identity,
+    listing,
+  });
+  const persistence = await saveC2CCheckout(listing, receipt);
+
+  return json(200, {
+    receipt,
+    persistence,
+    customerMessage:
+      "Payment simulated. Item payment is assigned to the seller; Amazon delivery fee covers pickup, quality check, and buyer delivery.",
+  });
 }
 
 async function selectRoute(routeId, event) {
@@ -257,6 +494,38 @@ export async function handler(event = {}) {
     return json(200, createCasePayload({}, getIdentity(event)));
   }
 
+  if (method === "GET" && path.endsWith("/c2c/orders")) {
+    const auth = requireIdentity(event);
+    if (auth.error) return auth.error;
+    return json(200, {
+      identity: auth.identity,
+      orders: ordersForCustomer(auth.identity),
+      accountMode: "unified_buyer_seller",
+      customerMessage:
+        "One NexTurn account can sell from Amazon order history and buy from the C2C marketplace.",
+    });
+  }
+
+  if (method === "GET" && path.endsWith("/c2c/marketplace")) {
+    return json(200, await buildMarketplacePayload());
+  }
+
+  if (method === "GET" && path.endsWith("/c2c/listing")) {
+    return getC2CListingPayload(event.queryStringParameters?.listingId);
+  }
+
+  if (method === "POST" && path.endsWith("/c2c/listings/evaluate")) {
+    return evaluateC2CListing(parseBody(event), event, { persist: false });
+  }
+
+  if (method === "POST" && path.endsWith("/c2c/listings")) {
+    return evaluateC2CListing(parseBody(event), event, { persist: true });
+  }
+
+  if (method === "POST" && path.endsWith("/c2c/checkout")) {
+    return checkoutC2CListing(parseBody(event), event);
+  }
+
   if (method === "GET" && path.endsWith("/orders")) {
     return json(200, { orders: orderHistory });
   }
@@ -316,6 +585,12 @@ export async function handler(event = {}) {
       "GET /messages",
       "GET /impact",
       "GET /me",
+      "GET /c2c/orders",
+      "GET /c2c/marketplace",
+      "GET /c2c/listing?listingId=...",
+      "POST /c2c/listings/evaluate",
+      "POST /c2c/listings",
+      "POST /c2c/checkout",
       "POST /route",
       "POST /scan/evaluate",
       "POST /exchange/connect",

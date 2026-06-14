@@ -65,6 +65,13 @@ class NexTurnStack extends Stack {
       ],
     });
 
+    table.addGlobalSecondaryIndex({
+      indexName: "MarketplaceIndex",
+      partitionKey: { name: "marketplaceStatus", type: AttributeType.STRING },
+      sortKey: { name: "updatedAt", type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
+
     const siteBucket = new Bucket(this, "SiteBucket", {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
@@ -237,6 +244,37 @@ class NexTurnStack extends Stack {
       integration,
       authorizer: customerAuthorizer,
     });
+    httpApi.addRoutes({
+      path: "/c2c/orders",
+      methods: [HttpMethod.GET],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/c2c/listings/evaluate",
+      methods: [HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/c2c/listings",
+      methods: [HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/c2c/checkout",
+      methods: [HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    for (const pathName of ["/c2c/marketplace", "/c2c/listing"]) {
+      httpApi.addRoutes({
+        path: pathName,
+        methods: [HttpMethod.GET],
+        integration,
+      });
+    }
 
     const siteHandler = new NodejsFunction(this, "SiteHandler", {
       runtime: Runtime.NODEJS_22_X,
