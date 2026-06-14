@@ -1,8 +1,14 @@
-import { conditionPresets, fakeOrderHistory, seedC2CListings } from "../data/c2cCommerce.js";
+import {
+  defaultBuyerLocation,
+  indianServiceLocations,
+  orderProofHistory,
+  seedC2CListings,
+} from "../data/c2cCommerce.js";
 
-const currency = new Intl.NumberFormat("en-US", {
+const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
-  currency: "USD",
+  currency: "INR",
+  maximumFractionDigits: 0,
 });
 
 const damageTerms = [
@@ -19,22 +25,135 @@ const damageTerms = [
   "tear",
 ];
 
-export const DELIVERY_FEE = 3.99;
+export const DEFAULT_DELIVERY_FEE_INR = 149;
+export const DELIVERY_FEE = DEFAULT_DELIVERY_FEE_INR;
+
+const marketplaceCategoryByProductCategory = {
+  audio: "Electronics",
+  camera: "Electronics",
+  laptop: "Electronics",
+  phone: "Electronics",
+  tablet: "Electronics",
+  wearable: "Electronics",
+};
+
+const fallbackSellerLocations = [
+  indianServiceLocations.find((location) => location.city === "Bengaluru"),
+  indianServiceLocations.find((location) => location.city === "Gurugram"),
+  indianServiceLocations.find((location) => location.city === "Mumbai"),
+  indianServiceLocations.find((location) => location.city === "Guwahati"),
+].filter(Boolean);
 
 export function formatMarketplaceCurrency(value) {
   return currency.format(Number(value ?? 0));
 }
 
+export function productMarketplaceCategory(category) {
+  return marketplaceCategoryByProductCategory[category] ?? "Lifestyle";
+}
+
+export function normalizeIndiaLocation(location = defaultBuyerLocation) {
+  const city = location?.city;
+  const state = location?.state;
+  const country = location?.country ?? "IN";
+  if (country !== "IN") return null;
+
+  return (
+    indianServiceLocations.find(
+      (candidate) =>
+        candidate.city.toLowerCase() === String(city ?? "").toLowerCase() &&
+        candidate.state.toLowerCase() === String(state ?? "").toLowerCase(),
+    ) ??
+    indianServiceLocations.find(
+      (candidate) => candidate.city.toLowerCase() === String(city ?? "").toLowerCase(),
+    ) ??
+    null
+  );
+}
+
+function radians(value) {
+  return (value * Math.PI) / 180;
+}
+
+export function calculateDistanceKm(origin, destination) {
+  const from = normalizeIndiaLocation(origin);
+  const to = normalizeIndiaLocation(destination);
+  if (!from || !to) return null;
+
+  const earthRadiusKm = 6371;
+  const deltaLat = radians(to.lat - from.lat);
+  const deltaLon = radians(to.lon - from.lon);
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(radians(from.lat)) *
+      Math.cos(radians(to.lat)) *
+      Math.sin(deltaLon / 2) ** 2;
+
+  return Math.round(earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+export function calculateDeliveryFee({
+  buyerLocation = defaultBuyerLocation,
+  sellerLocation = fallbackSellerLocations[0],
+  weightKg = 0.5,
+} = {}) {
+  const buyer = normalizeIndiaLocation(buyerLocation);
+  const seller = normalizeIndiaLocation(sellerLocation);
+  if (!buyer || !seller) {
+    return {
+      allowed: false,
+      fee: 0,
+      distanceKm: null,
+      band: "outside_india",
+      message: "NexTurn C2C delivery is currently available only for Indian addresses.",
+    };
+  }
+
+  const distanceKm = calculateDistanceKm(seller, buyer);
+  const weightSurcharge = Math.max(0, Math.ceil(Number(weightKg ?? 0.5) - 0.5) * 35);
+  let fee = 149;
+  let band = "same_city";
+
+  if (seller.city === buyer.city) {
+    fee = 79;
+  } else if (seller.state === buyer.state) {
+    fee = 119;
+    band = "same_state";
+  } else if (distanceKm <= 800) {
+    fee = 189;
+    band = "regional";
+  } else if (distanceKm <= 1800) {
+    fee = 249;
+    band = "national";
+  } else {
+    fee = 329;
+    band = "long_distance";
+  }
+
+  return {
+    allowed: true,
+    fee: fee + weightSurcharge,
+    distanceKm,
+    band,
+    buyerLocation: buyer,
+    sellerLocation: seller,
+    message:
+      seller.city === buyer.city
+        ? "Same-city pickup and delivery"
+        : `${seller.city}, ${seller.state} to ${buyer.city}, ${buyer.state}`,
+  };
+}
+
 export function ordersForCustomer(identity = {}) {
   const customerId = identity.customerId ?? "demo_customer";
 
-  return fakeOrderHistory.map((order, index) => ({
+  return orderProofHistory.map((order, index) => ({
     ...order,
     ownerId: customerId,
     ownerEmail: identity.email ?? "demo@nexturn.local",
     isListable: index < 5,
     authenticity: {
-      source: "Fake Amazon order history",
+      source: "Connected Amazon order history",
       orderId: order.id,
       asin: order.asin,
       purchasedNew: true,
@@ -47,12 +166,6 @@ export function findCustomerOrder(orderId, identity = {}) {
   return ordersForCustomer(identity).find((order) => order.id === orderId);
 }
 
-function clampScore(value, fallback = 85) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(100, parsed));
-}
-
 function labelText(label) {
   return [
     label.name ?? label.Name,
@@ -63,7 +176,7 @@ function labelText(label) {
     .toLowerCase();
 }
 
-export function detectDamageFlags({ aiAnalysis, fileName = "", sellerCondition = {} }) {
+export function detectDamageFlags({ aiAnalysis, fileName = "" }) {
   const labels = [
     ...(aiAnalysis?.labels ?? []),
     ...(aiAnalysis?.ignoredLabels ?? []),
@@ -71,10 +184,6 @@ export function detectDamageFlags({ aiAnalysis, fileName = "", sellerCondition =
   ];
   const labelBlob = labels.map(labelText).join(" ");
   const fileBlob = String(fileName).toLowerCase();
-  const presetFlags =
-    conditionPresets[sellerCondition.preset]?.damageFlags ??
-    sellerCondition.damageFlags ??
-    [];
   const detectedFlags = [];
 
   if (damageTerms.some((term) => labelBlob.includes(term) || fileBlob.includes(term))) {
@@ -85,46 +194,77 @@ export function detectDamageFlags({ aiAnalysis, fileName = "", sellerCondition =
     detectedFlags.push("broken_screen");
   }
 
-  if (/(crack|broken|shatter|damage)/.test(fileBlob)) {
+  if (/(crack|broken|shatter|damage|torn|split|parts|repair)/.test(fileBlob)) {
+    detectedFlags.push("severe_visual_damage");
+  }
+
+  if (/(screen|display|glass|phone|tablet)/.test(fileBlob) && /(crack|broken|shatter|damage)/.test(fileBlob)) {
     detectedFlags.push("broken_screen");
   }
 
-  return [...new Set([...presetFlags, ...detectedFlags])];
+  const comparison = aiAnalysis?.identityComparison ?? {};
+  const relevantConfidence = Number(comparison.topRelevantConfidence ?? 0);
+  const unrelatedConfidence = Number(comparison.topIgnoredConfidence ?? 0);
+  const referenceSimilarity = Number(comparison.referenceSimilarity ?? 0);
+  const hasLowRelevantMatch = relevantConfidence > 0 && relevantConfidence < 72;
+  const hasDominantUnrelatedEvidence =
+    unrelatedConfidence >= 80 && unrelatedConfidence - relevantConfidence >= 18;
+  const hasLowReferenceOverlap =
+    comparison.referenceImageCompared && referenceSimilarity > 0 && referenceSimilarity < 35;
+
+  if (hasLowRelevantMatch || hasDominantUnrelatedEvidence || hasLowReferenceOverlap) {
+    detectedFlags.push("visual_condition_risk");
+  }
+
+  return [...new Set(detectedFlags)];
 }
 
 export function buildConditionScorecard({
   aiAnalysis,
   fileName,
   order,
-  sellerCondition = {},
 } = {}) {
-  const preset = conditionPresets[sellerCondition.preset] ?? conditionPresets.pristine;
   const identityScore =
     aiAnalysis?.identityStatus === "mismatch"
       ? 25
       : aiAnalysis?.identityStatus === "unknown"
         ? 82
         : 100;
-  const damageFlags = detectDamageFlags({ aiAnalysis, fileName, sellerCondition });
+  const damageFlags = detectDamageFlags({ aiAnalysis, fileName });
   const hasBrokenScreen = damageFlags.includes("broken_screen");
+  const hasSevereDamage = damageFlags.includes("severe_visual_damage");
   const hasVisualDamage = damageFlags.includes("visual_damage_detected");
+  const hasVisualConditionRisk = damageFlags.includes("visual_condition_risk");
+  const comparison = aiAnalysis?.identityComparison ?? {};
+  const topRelevantConfidence = Number(comparison.topRelevantConfidence ?? 0);
 
-  let functionalScore = clampScore(sellerCondition.functionalScore, preset.functionalScore);
-  let cosmeticScore = clampScore(sellerCondition.cosmeticScore, preset.cosmeticScore);
-  let packagingScore = clampScore(sellerCondition.packagingScore, preset.packagingScore);
-  let accessoryCompleteness = clampScore(
-    sellerCondition.accessoryCompleteness,
-    preset.accessoryCompleteness,
-  );
+  let functionalScore = 92;
+  let cosmeticScore = 88;
+  let packagingScore = 82;
+  let accessoryCompleteness = 88;
+
+  if (topRelevantConfidence >= 90 && !hasVisualConditionRisk) {
+    functionalScore = 96;
+    cosmeticScore = 92;
+    accessoryCompleteness = 94;
+  }
 
   if (hasVisualDamage) {
     cosmeticScore = Math.min(cosmeticScore, 58);
   }
 
-  if (hasBrokenScreen && ["phone", "tablet", "wearable"].includes(order?.category)) {
+  if (hasVisualConditionRisk) {
     functionalScore = Math.min(functionalScore, 68);
-    cosmeticScore = Math.min(cosmeticScore, 38);
-    packagingScore = Math.min(packagingScore, 60);
+    cosmeticScore = Math.min(cosmeticScore, 42);
+    packagingScore = Math.min(packagingScore, 58);
+    accessoryCompleteness = Math.min(accessoryCompleteness, 72);
+  }
+
+  if (hasBrokenScreen || hasSevereDamage) {
+    functionalScore = Math.min(functionalScore, 58);
+    cosmeticScore = Math.min(cosmeticScore, 28);
+    packagingScore = Math.min(packagingScore, 52);
+    accessoryCompleteness = Math.min(accessoryCompleteness, 68);
   }
 
   if (aiAnalysis?.identityStatus === "mismatch") {
@@ -152,6 +292,8 @@ export function gradeScorecard(scorecard) {
     scorecard.packagingScore * 0.12 +
     scorecard.identityScore * 0.1;
   const hasBrokenScreen = scorecard.damageFlags.includes("broken_screen");
+  const hasSevereDamage = scorecard.damageFlags.includes("severe_visual_damage");
+  const hasVisualConditionRisk = scorecard.damageFlags.includes("visual_condition_risk");
   const identityMismatch = scorecard.identityScore < 50;
   const score = Math.round(rawScore);
 
@@ -165,13 +307,14 @@ export function gradeScorecard(scorecard) {
     };
   }
 
-  if (hasBrokenScreen) {
+  if (hasBrokenScreen || hasSevereDamage || hasVisualConditionRisk) {
     return {
       grade: "C",
-      label: "Damaged",
+      label: hasVisualConditionRisk ? "Needs pickup verification" : "Damaged",
       score: Math.min(score, 54),
       confidence: "Low confidence",
-      summary: "Broken or cracked screen evidence forces a low resale grade.",
+      summary:
+        "The uploaded photo differs materially from the order proof, so NexTurn applies a low resale grade until pickup verification.",
     };
   }
 
@@ -248,8 +391,8 @@ export function calculateDiscountedPrice(originalPrice, grade) {
   return {
     price: Number(price.toFixed(2)),
     discountPercent,
-    deliveryFee: DELIVERY_FEE,
-    buyerTotal: Number((price + DELIVERY_FEE).toFixed(2)),
+    deliveryFee: DEFAULT_DELIVERY_FEE_INR,
+    buyerTotal: Number((price + DEFAULT_DELIVERY_FEE_INR).toFixed(2)),
   };
 }
 
@@ -258,31 +401,43 @@ export function createListingFromEvaluation({
   identity = {},
   media,
   order,
-  sellerCondition,
+  uploadContext,
   uploadedImagePreview,
 } = {}) {
   const scorecard = buildConditionScorecard({
     aiAnalysis,
-    fileName: sellerCondition?.fileName,
+    fileName: uploadContext?.fileName,
     order,
-    sellerCondition,
   });
   const grade = gradeScorecard(scorecard);
   const pricing = calculateDiscountedPrice(order.originalPrice, grade);
   const publishable = aiAnalysis?.identityStatus !== "mismatch";
   const now = new Date().toISOString();
   const listingId = `nt_${order.id.replace(/[^0-9]/g, "")}_${Date.now().toString(36)}`;
+  const sellerLocation =
+    normalizeIndiaLocation(identity.location) ??
+    fallbackSellerLocations[Math.abs((identity.customerId ?? listingId).length) % fallbackSellerLocations.length] ??
+    defaultBuyerLocation;
+  const delivery = calculateDeliveryFee({
+    sellerLocation,
+    buyerLocation: defaultBuyerLocation,
+    weightKg: order.estimatedWeightKg,
+  });
 
   return {
     id: listingId,
     sellerId: identity.customerId,
     sellerName: identity.name ?? "NexTurn seller",
     sellerEmail: identity.email,
-    sellerNeighborhood: identity.neighborhood ?? "Local pickup zone",
+    sellerNeighborhood: identity.neighborhood ?? sellerLocation.city,
+    sellerCity: sellerLocation.city,
+    sellerState: sellerLocation.state,
+    sellerLocation,
     status: publishable ? "active" : "blocked_identity_mismatch",
     createdAt: now,
     source: "nexturn-ai-graded",
     item: order,
+    category: order.marketplaceCategory ?? productMarketplaceCategory(order.category),
     image: order.image,
     uploadedImagePreview,
     grade,
@@ -291,7 +446,8 @@ export function createListingFromEvaluation({
     media,
     price: pricing.price,
     discountPercent: pricing.discountPercent,
-    deliveryFee: pricing.deliveryFee,
+    deliveryFee: delivery.allowed ? delivery.fee : pricing.deliveryFee,
+    deliveryEstimate: delivery,
     badge: publishable ? "AI Graded & Amazon Verified" : "Photo does not match order",
     publishable,
     blockingReason: publishable
@@ -301,16 +457,21 @@ export function createListingFromEvaluation({
       "No warehouse involved. Seller keeps the item at home until a buyer pays; Amazon delivery partner checks quality at pickup and delivers to the buyer.",
     settlement: {
       itemPaymentToSeller: pricing.price,
-      deliveryFeeToAmazon: pricing.deliveryFee,
-      buyerTotal: pricing.buyerTotal,
+      deliveryFeeToAmazon: delivery.allowed ? delivery.fee : pricing.deliveryFee,
+      buyerTotal: Number((pricing.price + (delivery.allowed ? delivery.fee : pricing.deliveryFee)).toFixed(2)),
     },
   };
 }
 
-export function createCheckoutReceipt({ buyerIdentity = {}, listing }) {
+export function createCheckoutReceipt({ buyerIdentity = {}, buyerLocation = defaultBuyerLocation, listing }) {
   const paidAt = new Date().toISOString();
   const itemPayment = Number(listing.price ?? 0);
-  const deliveryFee = Number(listing.deliveryFee ?? DELIVERY_FEE);
+  const delivery = calculateDeliveryFee({
+    buyerLocation,
+    sellerLocation: listing.sellerLocation,
+    weightKg: listing.item?.estimatedWeightKg,
+  });
+  const deliveryFee = Number(delivery.allowed ? delivery.fee : listing.deliveryFee ?? DEFAULT_DELIVERY_FEE_INR);
 
   return {
     id: `checkout_${listing.id}_${Date.now().toString(36)}`,
@@ -319,13 +480,16 @@ export function createCheckoutReceipt({ buyerIdentity = {}, listing }) {
     status: "payment_simulated",
     buyerId: buyerIdentity.customerId,
     buyerEmail: buyerIdentity.email,
+    buyerLocation: delivery.buyerLocation ?? buyerLocation,
     sellerId: listing.sellerId,
     sellerName: listing.sellerName,
+    sellerLocation: delivery.sellerLocation ?? listing.sellerLocation,
     itemTitle: listing.item.title,
     itemPayment,
     deliveryFee,
     totalPaid: Number((itemPayment + deliveryFee).toFixed(2)),
     logisticsStatus: "pickup_scheduled",
+    deliveryEstimate: delivery,
     logistics:
       "Amazon facilitates local C2C delivery: pickup from seller home, condition check by delivery partner, drop at buyer address.",
   };
@@ -340,12 +504,13 @@ export function buildFallbackMarketplace() {
   };
 }
 
-export function buildGenericFallbackItems(count = 120) {
-  const categories = ["Audio", "Wearables", "Tablets", "Cameras", "Home tech", "Accessories"];
+export function buildGenericFallbackItems(count = 180) {
+  const categories = ["Electronics", "Beauty", "Home", "Fashion", "Food", "Books", "Sports"];
 
   return Array.from({ length: count }, (_, index) => {
     const category = categories[index % categories.length];
-    const price = 24 + ((index * 11) % 420);
+    const price = 399 + ((index * 431) % 42000);
+    const sellerLocation = fallbackSellerLocations[index % fallbackSellerLocations.length];
     return {
       id: `generic_${index + 1}`,
       source: "generic-background",
@@ -355,6 +520,10 @@ export function buildGenericFallbackItems(count = 120) {
       image: seedC2CListings[index % seedC2CListings.length].image,
       rating: Number((3.8 + ((index % 12) * 0.08)).toFixed(1)),
       badge: "Marketplace item",
+      sellerName: "Dummy seller",
+      sellerCity: sellerLocation.city,
+      sellerState: sellerLocation.state,
+      sellerLocation,
     };
   });
 }

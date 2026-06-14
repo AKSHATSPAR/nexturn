@@ -21,12 +21,12 @@ sides of one unified account:
 - Unified Buyer + Seller account shell with Cognito Hosted UI and optional Google
   sign-in.
 - Sell / Return Items hub gated behind login.
-- Hardcoded fake Amazon order history with 5 high-value products, original
+- Prototype Amazon order proof history with 5 high-value products, original
   price, purchase date, ASIN, original product image, and proof metadata.
 - Real upload flow for seller item photos.
 - AWS Rekognition image evidence on deployed API, combined with deterministic
-  condition scoring for functional, cosmetic, packaging, accessory, and identity
-  signals.
+  photo comparison scoring for product identity, visual similarity, condition
+  risk, packaging, accessory, and identity signals.
 - Damage-aware grading: cracked or broken screen evidence forces low grades like
   `C` instead of pretending every upload is `A`.
 - Dynamic discounted resale price based on grade.
@@ -34,8 +34,8 @@ sides of one unified account:
   API background products from DummyJSON.
 - Listing detail drawer with transparent scorecard, original order proof,
   discounted price, and "AI Graded & Amazon Verified" badge.
-- Mock checkout: buyer pays item price plus flat Amazon Delivery Fee. The item
-  payment is assigned to the seller; Amazon only facilitates local delivery.
+- Mock checkout: buyer pays item price plus route-based Amazon Delivery Fee. The
+  item payment is assigned to the seller; Amazon only facilitates local delivery.
 - DynamoDB persistence for created listings and checkout receipts.
 - S3 media persistence and Rekognition permissions in the AWS CDK stack.
 
@@ -49,7 +49,7 @@ flowchart LR
   Web --> API["HTTP API Gateway"]
   API --> JWT["JWT authorizer for buy/sell"]
   API --> Lambda["NexTurn Lambda"]
-  Lambda --> Orders["Fake Amazon order history"]
+  Lambda --> Orders["Amazon order proof history"]
   Lambda --> Rekognition["Amazon Rekognition"]
   Lambda --> S3["Private S3 scan media"]
   Lambda --> Scorecard["Explainable grade + price engine"]
@@ -61,11 +61,11 @@ flowchart LR
 ## Main Flow
 
 1. Seller signs in.
-2. Seller opens Sell / Return Items and selects a product from fake Amazon order
+2. Seller opens Sell / Return Items and selects a product from Amazon order
    history.
-3. Seller uploads a real item photo and chooses the visible condition preset.
-4. Backend runs AWS AI evidence when deployed and the scorecard calculates grade
-   and discounted resale price.
+3. Seller uploads a real item photo.
+4. Backend compares the upload against the order proof photo and metadata, then
+   calculates grade and discounted resale price.
 5. Seller publishes the listing. The item stays with the seller at home.
 6. Another signed-in buyer opens Marketplace and sees the listing above the
    public API product feed.
@@ -111,8 +111,8 @@ Google sign-in is configuration-gated. Set `GOOGLE_CLIENT_ID` and
 ## Key Files
 
 - `src/App.jsx` - C2C buyer/seller web app.
-- `src/data/c2cCommerce.js` - fake order history, demo accounts, seed listings,
-  and condition presets.
+- `src/data/c2cCommerce.js` - order proof history, demo accounts, seed listings,
+  and supported India delivery locations.
 - `src/lib/c2cCommerce.js` - scorecard, grade, pricing, listing, and checkout
   rules.
 - `backend/lambda/returnResolution.js` - Lambda-compatible API handler.

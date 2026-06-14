@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
+  Boxes,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -8,6 +9,8 @@ import {
   Leaf,
   LogIn,
   LogOut,
+  MapPin,
+  Moon,
   PackageCheck,
   PackageOpen,
   ReceiptText,
@@ -16,7 +19,10 @@ import {
   Settings,
   ShieldCheck,
   ShoppingBag,
+  ShoppingCart,
+  SlidersHorizontal,
   Store,
+  Sun,
   Upload,
   X,
 } from "lucide-react";
@@ -28,8 +34,8 @@ import {
   fetchC2CMarketplace,
   fetchC2COrders,
 } from "./services/returnResolutionApi";
-import { conditionPresets } from "./data/c2cCommerce";
-import { formatMarketplaceCurrency } from "./lib/c2cCommerce";
+import { defaultBuyerLocation, indianServiceLocations } from "./data/c2cCommerce";
+import { calculateDeliveryFee, formatMarketplaceCurrency } from "./lib/c2cCommerce";
 
 const navItems = [
   { id: "home", label: "Overview", Icon: Home },
@@ -87,10 +93,35 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
   );
 }
 
+function TopCommandBar({
+  cartCount,
+  location,
+  onCartOpen,
+  onThemeToggle,
+  theme,
+}) {
+  return (
+    <div className="top-command-bar" aria-label="Workspace controls">
+      <span className="location-chip">
+        <MapPin size={15} />
+        {location.city}, {location.state}
+      </span>
+      <button type="button" aria-label="Open cart" onClick={onCartOpen}>
+        <ShoppingCart size={17} />
+        <span>{cartCount}</span>
+      </button>
+      <button type="button" aria-label="Toggle dark mode" onClick={onThemeToggle}>
+        {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+      </button>
+    </div>
+  );
+}
+
 function Sidebar({
   activeView,
   auth,
   collapsed,
+  location,
   onGoogleSignIn,
   onNavigate,
   onSignIn,
@@ -144,6 +175,15 @@ function Sidebar({
             <PackageCheck size={22} /> No warehouse
           </strong>
           <small>Seller keeps item at home until buyer checkout.</small>
+        </section>
+        <section className="credit-card service-card">
+          <span>Delivery location</span>
+          <strong>
+            <MapPin size={22} /> India only
+          </strong>
+          <small>
+            Buyer route starts at {location.city}, {location.state}.
+          </small>
         </section>
       </div>
     </aside>
@@ -205,8 +245,8 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
         <MetricCard
           label="Order proof"
           value={`${orders.length || 5} items`}
-          detail="Fake Amazon history for demo authenticity"
-          Icon={PackageCheck}
+          detail="Connected order history anchors authenticity"
+          Icon={Boxes}
         />
         <MetricCard
           label="Marketplace"
@@ -257,23 +297,6 @@ function OrderCard({ isSelected, onSelect, order }) {
   );
 }
 
-function ConditionSelector({ value, onChange }) {
-  return (
-    <div className="condition-selector" aria-label="Declared item condition">
-      {Object.values(conditionPresets).map((preset) => (
-        <button
-          className={value === preset.id ? "active" : ""}
-          key={preset.id}
-          type="button"
-          onClick={() => onChange(preset.id)}
-        >
-          {preset.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function ScoreBar({ label, value }) {
   return (
     <div className="score-bar">
@@ -284,6 +307,36 @@ function ScoreBar({ label, value }) {
       <i>
         <em style={{ width: `${Math.max(4, Math.min(100, value))}%` }} />
       </i>
+    </div>
+  );
+}
+
+function AiEvidenceSummary({ aiAnalysis }) {
+  const comparison = aiAnalysis?.identityComparison ?? {};
+  const referenceCompared = Boolean(comparison.referenceImageCompared);
+  const productMatch = Math.round(comparison.topRelevantConfidence ?? 0);
+  const photoSimilarity = Math.round(comparison.referenceSimilarity ?? 0);
+  const risk =
+    aiAnalysis?.identityStatus === "mismatch"
+      ? "Wrong item"
+      : comparison.weakProductEvidence || comparison.dominantUnrelatedEvidence
+        ? "Condition risk"
+        : "Clear match";
+
+  return (
+    <div className="ai-evidence-grid" aria-label="AI comparison evidence">
+      <span>
+        <small>Product match</small>
+        <strong>{productMatch ? `${productMatch}%` : "Review"}</strong>
+      </span>
+      <span>
+        <small>Order-photo compare</small>
+        <strong>{referenceCompared ? `${photoSimilarity}%` : "Metadata"}</strong>
+      </span>
+      <span>
+        <small>AI decision</small>
+        <strong>{risk}</strong>
+      </span>
     </div>
   );
 }
@@ -323,9 +376,8 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
           photo matches the selected Amazon order.
         </p>
       )}
-      {evaluation.aiAnalysis?.summary && (
-        <p className="ai-summary-note">{evaluation.aiAnalysis.summary}</p>
-      )}
+      <AiEvidenceSummary aiAnalysis={evaluation.aiAnalysis} />
+      {evaluation.aiAnalysis?.summary && <p className="ai-summary-note">{evaluation.aiAnalysis.summary}</p>}
       <div className="price-split">
         <span>{isBlocked ? "Listing status" : "Auto discounted price"}</span>
         <strong>{isBlocked ? "Blocked" : formatMarketplaceCurrency(listing.price)}</strong>
@@ -383,14 +435,12 @@ function SellHubView({
   isSignedIn,
   isUploading,
   listingMessage,
-  onConditionChange,
   onEvaluate,
   onFileSelected,
   onPublish,
   onSelectOrder,
   orders,
   selectedOrder,
-  sellerCondition,
 }) {
   if (!isSignedIn) {
     return (
@@ -413,13 +463,13 @@ function SellHubView({
       <PageHeader
         eyebrow="Sell / Return items"
         title="Choose a verified Amazon purchase"
-        description="The order history below is hardcoded for the prototype and acts as the proof-of-authenticity anchor."
+        description="The connected order history below acts as the proof-of-authenticity anchor. The uploaded item photo is compared against this order proof before pricing."
       />
 
       <div className="sell-grid">
         <section className="panel order-history-panel">
           <div className="panel-heading">
-            <h2>Fake Amazon order history</h2>
+            <h2>Connected Amazon order history</h2>
             <Badge>Proof anchor</Badge>
           </div>
           <div className="order-proof-list">
@@ -452,13 +502,10 @@ function SellHubView({
           ) : (
             <p className="muted-copy">Select an order before uploading the resale photo.</p>
           )}
-          <ConditionSelector
-            value={sellerCondition.preset}
-            onChange={(preset) => onConditionChange({ preset })}
-          />
           <p className="condition-hint-copy">
-            Optional seller condition hint. AI identity matching still decides whether
-            the photo belongs to this order.
+            No manual condition labels are used. NexTurn compares the uploaded photo
+            against the order proof image and product metadata, then grades visual match
+            and damage risk automatically.
           </p>
           <label className="upload-dropzone">
             <input
@@ -497,53 +544,115 @@ function SellHubView({
   );
 }
 
-function HeroListingCard({ listing, onOpen }) {
+function HeroListingCard({ listing, onAddToCart, onOpen }) {
   return (
-    <button className="hero-listing-card" type="button" onClick={() => onOpen(listing)}>
-      <img src={listing.image} alt="" />
+    <article className="hero-listing-card">
+      <button className="listing-image-button" type="button" onClick={() => onOpen(listing)}>
+        <img src={listing.image} alt="" />
+      </button>
       <span className="listing-badge">{listing.badge}</span>
       <div>
         <strong>{listing.item.title}</strong>
         <small>
           {listing.grade.grade} · {listing.grade.label} · {listing.discountPercent}% off
         </small>
+        <small>
+          Seller: {listing.sellerName} · {listing.sellerCity}, {listing.sellerState}
+        </small>
       </div>
       <footer>
-        <b>{formatMarketplaceCurrency(listing.price)}</b>
-        <em>Seller keeps item until purchase</em>
+        <span>
+          <b>{formatMarketplaceCurrency(listing.price)}</b>
+          <em>{listing.category ?? listing.item.marketplaceCategory ?? "Electronics"}</em>
+        </span>
+        <button type="button" onClick={() => onAddToCart(listing)}>
+          <ShoppingCart size={15} /> Add
+        </button>
       </footer>
-    </button>
+    </article>
   );
 }
 
-function GenericItemCard({ item, onOpen }) {
+function GenericItemCard({ item, onAddToCart, onOpen }) {
   return (
-    <button className="generic-item-card" type="button" onClick={() => onOpen(item)}>
-      <img src={item.image} alt="" />
+    <article className="generic-item-card">
+      <button type="button" onClick={() => onOpen(item)}>
+        <img src={item.image} alt="" />
+      </button>
       <span>
         <strong>{item.title}</strong>
-        <small>{item.category}</small>
+        <small>
+          {item.category} · {item.sellerCity}, {item.sellerState}
+        </small>
       </span>
-      <b>{formatMarketplaceCurrency(item.price)}</b>
-    </button>
+      <footer>
+        <b>{formatMarketplaceCurrency(item.price)}</b>
+        <button type="button" onClick={() => onAddToCart(item)}>
+          <ShoppingCart size={14} /> Add
+        </button>
+      </footer>
+    </article>
   );
 }
 
 function MarketplaceView({
+  categoryFilter,
+  gradeFilter,
   isLoading,
   marketplace,
+  onAddToCart,
+  onCategoryChange,
+  onGradeChange,
   onOpenListing,
+  onPageChange,
+  onPageSizeChange,
   onSearch,
+  page,
+  pageSize,
   searchTerm,
 }) {
+  const allCategories = useMemo(() => {
+    const categories = new Set([
+      ...marketplace.heroListings.map((listing) => listing.category ?? listing.item?.marketplaceCategory),
+      ...marketplace.genericItems.map((item) => item.category),
+    ]);
+    return ["All categories", ...[...categories].filter(Boolean).sort()];
+  }, [marketplace.genericItems, marketplace.heroListings]);
+
   const filteredGeneric = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return marketplace.genericItems;
+    const matches = (item) => {
+      const matchesSearch =
+        !query ||
+        `${item.title} ${item.category} ${item.sellerCity ?? ""} ${item.sellerState ?? ""}`
+          .toLowerCase()
+          .includes(query);
+      const matchesCategory =
+        categoryFilter === "All categories" || item.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    };
 
-    return marketplace.genericItems.filter((item) =>
-      `${item.title} ${item.category}`.toLowerCase().includes(query),
-    );
-  }, [marketplace.genericItems, searchTerm]);
+    return marketplace.genericItems.filter(matches);
+  }, [categoryFilter, marketplace.genericItems, searchTerm]);
+
+  const filteredHero = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return marketplace.heroListings.filter((listing) => {
+      const category = listing.category ?? listing.item?.marketplaceCategory ?? "Electronics";
+      const matchesSearch =
+        !query ||
+        `${listing.item.title} ${category} ${listing.sellerName} ${listing.sellerCity ?? ""}`
+          .toLowerCase()
+          .includes(query);
+      const matchesCategory = categoryFilter === "All categories" || category === categoryFilter;
+      const matchesGrade = gradeFilter === "All grades" || listing.grade?.grade === gradeFilter;
+      return matchesSearch && matchesCategory && matchesGrade;
+    });
+  }, [categoryFilter, gradeFilter, marketplace.heroListings, searchTerm]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredGeneric.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pagedGeneric = filteredGeneric.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <main className="studio workspace-page c2c-workspace marketplace-page">
@@ -552,26 +661,53 @@ function MarketplaceView({
         title="Second-life items with proof you can inspect"
         description="AI-graded listings are injected above the public API product feed so judges can see the working C2C inventory."
         action={
-          <label className="market-search">
-            <Search size={16} />
-            <input
-              type="search"
-              value={searchTerm}
-              placeholder="Search marketplace"
-              onChange={(event) => onSearch(event.target.value)}
-            />
-          </label>
+          <div className="market-toolbar">
+            <label className="market-search">
+              <Search size={16} />
+              <input
+                type="search"
+                value={searchTerm}
+                placeholder="Search marketplace"
+                onChange={(event) => onSearch(event.target.value)}
+              />
+            </label>
+            <label className="filter-control">
+              <SlidersHorizontal size={15} />
+              <select value={categoryFilter} onChange={(event) => onCategoryChange(event.target.value)}>
+                {allCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-control">
+              <span>Grade</span>
+              <select value={gradeFilter} onChange={(event) => onGradeChange(event.target.value)}>
+                {["All grades", "A", "A-", "B+", "B", "C"].map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         }
       />
 
       <section className="hero-market-section">
         <div className="section-heading">
           <h2>AI Graded & Amazon Verified</h2>
-          <Badge>{marketplace.heroListings.length} live listings</Badge>
+          <Badge>{filteredHero.length} live listings</Badge>
         </div>
         <div className="hero-listing-grid">
-          {marketplace.heroListings.map((listing) => (
-            <HeroListingCard key={listing.id} listing={listing} onOpen={onOpenListing} />
+          {filteredHero.map((listing) => (
+            <HeroListingCard
+              key={listing.id}
+              listing={listing}
+              onAddToCart={onAddToCart}
+              onOpen={onOpenListing}
+            />
           ))}
         </div>
       </section>
@@ -584,16 +720,44 @@ function MarketplaceView({
           </Badge>
         </div>
         <div className="generic-grid">
-          {filteredGeneric.map((item) => (
-            <GenericItemCard key={item.id} item={item} onOpen={onOpenListing} />
+          {pagedGeneric.map((item) => (
+            <GenericItemCard
+              key={item.id}
+              item={item}
+              onAddToCart={onAddToCart}
+              onOpen={onOpenListing}
+            />
           ))}
         </div>
+        <footer className="pagination-bar">
+          <span>
+            Page {safePage} of {pageCount}
+          </span>
+          <label>
+            Show
+            <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
+            <button type="button" disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)}>
+              <ChevronLeft size={16} /> Previous
+            </button>
+            <button type="button" disabled={safePage >= pageCount} onClick={() => onPageChange(safePage + 1)}>
+              Next <ChevronRight size={16} />
+            </button>
+          </div>
+        </footer>
       </section>
     </main>
   );
 }
 
-function MyListingsView({ listings, onOpenListing }) {
+function MyListingsView({ listings, onAddToCart, onOpenListing }) {
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
@@ -604,7 +768,12 @@ function MyListingsView({ listings, onOpenListing }) {
       {listings.length ? (
         <div className="hero-listing-grid compact">
           {listings.map((listing) => (
-            <HeroListingCard key={listing.id} listing={listing} onOpen={onOpenListing} />
+            <HeroListingCard
+              key={listing.id}
+              listing={listing}
+              onAddToCart={onAddToCart}
+              onOpen={onOpenListing}
+            />
           ))}
         </div>
       ) : (
@@ -636,7 +805,7 @@ function ImpactView() {
         <MetricCard
           label="Trust signal"
           value="Order proof"
-          detail="Fake Amazon order metadata anchors authenticity"
+          detail="Connected Amazon order metadata anchors authenticity"
           Icon={ShieldCheck}
         />
         <MetricCard
@@ -650,15 +819,48 @@ function ImpactView() {
   );
 }
 
-function SettingsView() {
+function SettingsView({ buyerLocation, onBuyerLocationChange, theme, onThemeToggle }) {
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Settings"
         title="Prototype transparency"
-        description="This demo uses AWS Rekognition for image evidence, a deterministic scorecard for grade, DynamoDB for listings, and a mock payment success state."
+        description="This demo uses AWS Rekognition for image evidence, a deterministic scorecard for grade, DynamoDB for listings, India-only delivery rules, and a mock payment success state."
       />
       <section className="panel settings-panel c2c-settings">
+        <div className="settings-row">
+          <span>
+            <strong>Buyer delivery city</strong>
+            <small>Used to estimate Amazon-facilitated C2C pickup and delivery fee.</small>
+          </span>
+          <select
+            className="settings-select"
+            value={`${buyerLocation.city}|${buyerLocation.state}`}
+            onChange={(event) => {
+              const [city, state] = event.target.value.split("|");
+              const next = indianServiceLocations.find(
+                (location) => location.city === city && location.state === state,
+              );
+              if (next) onBuyerLocationChange(next);
+            }}
+          >
+            {indianServiceLocations.map((location) => (
+              <option key={`${location.city}-${location.state}`} value={`${location.city}|${location.state}`}>
+                {location.city}, {location.state}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-row">
+          <span>
+            <strong>Theme</strong>
+            <small>Switch between light and dark dashboard modes.</small>
+          </span>
+          <button className="settings-button" type="button" onClick={onThemeToggle}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
+        </div>
         <div className="settings-row">
           <span>
             <strong>Warehouse involvement</strong>
@@ -679,9 +881,11 @@ function SettingsView() {
 }
 
 function ListingDrawer({
+  buyerLocation,
   checkoutState,
   isSignedIn,
   listing,
+  onAddToCart,
   onBuy,
   onClose,
   signedInCustomerId,
@@ -690,6 +894,12 @@ function ListingDrawer({
 
   const isHero = listing.source === "nexturn-ai-graded";
   const isOwnListing = isHero && listing.sellerId === signedInCustomerId;
+  const delivery = calculateDeliveryFee({
+    buyerLocation,
+    sellerLocation: listing.sellerLocation,
+    weightKg: listing.item?.estimatedWeightKg,
+  });
+  const deliveryFee = delivery.allowed ? delivery.fee : Number(listing.deliveryFee ?? 0);
 
   return (
     <div className="drawer-backdrop" role="presentation" onClick={onClose}>
@@ -727,6 +937,16 @@ function ListingDrawer({
               <p>{listing.item.proofNote}</p>
             </section>
             <section className="proof-box">
+              <h3>Seller and delivery route</h3>
+              <p>
+                Seller: {listing.sellerName} · {listing.sellerCity}, {listing.sellerState}
+              </p>
+              <p>
+                Buyer: {buyerLocation.city}, {buyerLocation.state} ·{" "}
+                {delivery.distanceKm ? `${delivery.distanceKm} km route estimate` : delivery.message}
+              </p>
+            </section>
+            <section className="proof-box">
               <h3>Transparent scorecard</h3>
               <ScoreBar label="Functional" value={listing.scorecard.functionalScore} />
               <ScoreBar label="Cosmetic" value={listing.scorecard.cosmeticScore} />
@@ -744,11 +964,11 @@ function ListingDrawer({
               </div>
               <div>
                 <span>Amazon Delivery Fee</span>
-                <b>{formatMarketplaceCurrency(listing.deliveryFee)}</b>
+                <b>{formatMarketplaceCurrency(deliveryFee)}</b>
               </div>
               <div>
                 <span>Total mock payment</span>
-                <b>{formatMarketplaceCurrency(listing.price + listing.deliveryFee)}</b>
+                <b>{formatMarketplaceCurrency(listing.price + deliveryFee)}</b>
               </div>
             </section>
             <p className="seller-hold-note">{listing.logistics}</p>
@@ -761,21 +981,26 @@ function ListingDrawer({
                 </span>
               </section>
             ) : (
-              <button
-                className="primary-action"
-                type="button"
-                disabled={!isSignedIn || isOwnListing || checkoutState?.status === "loading"}
-                onClick={() => onBuy(listing)}
-              >
-                <CircleDollarSign size={17} />
-                {!isSignedIn
-                  ? "Sign in to buy"
-                  : isOwnListing
-                    ? "Your own listing"
-                    : checkoutState?.status === "loading"
-                      ? "Processing..."
-                      : "Buy now"}
-              </button>
+              <div className="drawer-actions">
+                <button className="secondary-action" type="button" onClick={() => onAddToCart(listing)}>
+                  <ShoppingCart size={17} /> Add to cart
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={!isSignedIn || isOwnListing || checkoutState?.status === "loading" || !delivery.allowed}
+                  onClick={() => onBuy(listing)}
+                >
+                  <CircleDollarSign size={17} />
+                  {!isSignedIn
+                    ? "Sign in to buy"
+                    : isOwnListing
+                      ? "Your own listing"
+                      : checkoutState?.status === "loading"
+                        ? "Processing..."
+                        : "Buy now"}
+                </button>
+              </div>
             )}
             {checkoutState?.error && <p className="auth-error">{checkoutState.error}</p>}
           </div>
@@ -785,16 +1010,126 @@ function ListingDrawer({
             <div className="listing-price-block">
               <span>Public API marketplace item</span>
               <strong>{formatMarketplaceCurrency(listing.price)}</strong>
-              <small>{listing.category}</small>
+              <small>
+                {listing.category} · {listing.sellerCity}, {listing.sellerState}
+              </small>
             </div>
             <p className="drawer-copy">
-              This item fills the marketplace background from a public API. The full
-              proof, AI grading, and C2C checkout flow is available on NexTurn hero listings.
+              This item fills the marketplace background from a public API. It can be
+              added to cart for browsing, while full order proof and AI grading are
+              available on NexTurn verified listings.
             </p>
+            <button className="secondary-action" type="button" onClick={() => onAddToCart(listing)}>
+              <ShoppingCart size={17} /> Add to cart
+            </button>
           </div>
         )}
       </aside>
     </div>
+  );
+}
+
+function CartDrawer({ buyerLocation, cartItems, onClose, onOpenListing, onRemove }) {
+  if (!cartItems) return null;
+
+  const subtotal = cartItems.reduce((sum, item) => sum + Number(item.price ?? 0), 0);
+  const deliveryTotal = cartItems.reduce((sum, item) => {
+    const delivery = calculateDeliveryFee({
+      buyerLocation,
+      sellerLocation: item.sellerLocation,
+      weightKg: item.item?.estimatedWeightKg,
+    });
+    return sum + (delivery.allowed ? delivery.fee : 0);
+  }, 0);
+
+  return (
+    <div className="drawer-backdrop" role="presentation" onClick={onClose}>
+      <aside
+        className="drawer-panel cart-drawer"
+        aria-label="Cart"
+        aria-modal="true"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <h2>Cart</h2>
+          <button type="button" aria-label="Close cart" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="drawer-body">
+          {cartItems.length ? (
+            cartItems.map((item) => {
+              const isHero = item.source === "nexturn-ai-graded";
+              const title = isHero ? item.item.title : item.title;
+              const delivery = calculateDeliveryFee({
+                buyerLocation,
+                sellerLocation: item.sellerLocation,
+                weightKg: item.item?.estimatedWeightKg,
+              });
+
+              return (
+                <section className="cart-row" key={item.id}>
+                  <img src={item.image} alt="" />
+                  <span>
+                    <strong>{title}</strong>
+                    <small>
+                      {item.sellerCity}, {item.sellerState} ·{" "}
+                      {delivery.allowed ? formatMarketplaceCurrency(delivery.fee) : "Not deliverable"}
+                    </small>
+                    <b>{formatMarketplaceCurrency(item.price)}</b>
+                  </span>
+                  <div>
+                    <button type="button" onClick={() => onOpenListing(item)}>
+                      View
+                    </button>
+                    <button type="button" onClick={() => onRemove(item.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </section>
+              );
+            })
+          ) : (
+            <section className="panel sign-in-gate empty-cart">
+              <ShoppingCart size={24} />
+              <h2>Your cart is empty</h2>
+              <p>Add verified listings or marketplace items while browsing.</p>
+            </section>
+          )}
+          <section className="checkout-split">
+            <h3>Cart estimate</h3>
+            <div>
+              <span>Item subtotal</span>
+              <b>{formatMarketplaceCurrency(subtotal)}</b>
+            </div>
+            <div>
+              <span>Estimated delivery fees</span>
+              <b>{formatMarketplaceCurrency(deliveryTotal)}</b>
+            </div>
+            <div>
+              <span>Total</span>
+              <b>{formatMarketplaceCurrency(subtotal + deliveryTotal)}</b>
+            </div>
+          </section>
+          <p className="seller-hold-note">
+            Buy from an item detail page to simulate payment. Cart keeps browsing state
+            without creating a real payment.
+          </p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function CompanyFooter() {
+  return (
+    <footer className="company-footer">
+      <span>NexTurn Sustainable Commerce Labs</span>
+      <span>India C2C prototype · Built for Amazon-integrated resale workflows</span>
+      <a href="mailto:support@nexturn.example">support@nexturn.example</a>
+      <span>© 2026 NexTurn. Demo marketplace, no real payments.</span>
+    </footer>
   );
 }
 
@@ -806,9 +1141,14 @@ export function App() {
     session: null,
     error: null,
   });
+  const [buyerLocation, setBuyerLocation] = useState(defaultBuyerLocation);
+  const [cartItems, setCartItems] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState("All categories");
   const [checkoutState, setCheckoutState] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [gradeFilter, setGradeFilter] = useState("All grades");
+  const [isCartOpen, setCartOpen] = useState(false);
   const [isLoadingMarketplace, setLoadingMarketplace] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isUploading, setUploading] = useState(false);
@@ -818,11 +1158,13 @@ export function App() {
     genericItems: [],
   });
   const [orders, setOrders] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedListing, setSelectedListing] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [sellerCondition, setSellerCondition] = useState({ preset: "pristine" });
+  const [theme, setTheme] = useState("light");
 
   const isSignedIn = Boolean(auth.session);
   const signedInCustomerId = auth.session?.user?.subject
@@ -856,6 +1198,14 @@ export function App() {
   useEffect(() => {
     refreshMarketplace();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [categoryFilter, gradeFilter, pageSize, searchTerm]);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -892,6 +1242,7 @@ export function App() {
   function navigate(view) {
     setActiveView(view);
     setSelectedListing(null);
+    setCartOpen(false);
   }
 
   async function handleSignIn(provider) {
@@ -933,11 +1284,7 @@ export function App() {
     setUploading(true);
     setListingMessage("Running AWS AI evidence and deterministic scorecard...");
     try {
-      const result = await evaluateC2CListingUpload(
-        selectedFile,
-        selectedOrder.id,
-        sellerCondition,
-      );
+      const result = await evaluateC2CListingUpload(selectedFile, selectedOrder.id);
       setEvaluation(result);
       setListingMessage(result.customerMessage ?? "AI grade ready.");
     } catch (error) {
@@ -956,7 +1303,7 @@ export function App() {
     setUploading(true);
     setListingMessage("Publishing listing to the global NexTurn marketplace...");
     try {
-      const result = await createC2CListing(selectedFile, selectedOrder.id, sellerCondition);
+      const result = await createC2CListing(selectedFile, selectedOrder.id);
       setListingMessage(result.customerMessage ?? "Listing published.");
       await refreshMarketplace();
       setSelectedListing(result.listing);
@@ -971,7 +1318,7 @@ export function App() {
   async function handleBuy(listing) {
     setCheckoutState({ status: "loading" });
     try {
-      const result = await checkoutC2CListing(listing.id);
+      const result = await checkoutC2CListing(listing.id, buyerLocation);
       setCheckoutState({
         status: "success",
         receipt: result.receipt,
@@ -989,14 +1336,22 @@ export function App() {
   function handleOpenListing(listing) {
     setCheckoutState(null);
     setSelectedListing(listing);
+    setCartOpen(false);
   }
 
-  function handleConditionChange(nextCondition) {
-    setSellerCondition(nextCondition);
-    setEvaluation(null);
-    if (selectedFile) {
-      setListingMessage("Condition changed. Re-run AI grade before publishing.");
-    }
+  function handleAddToCart(item) {
+    setCartItems((current) =>
+      current.some((cartItem) => cartItem.id === item.id) ? current : [...current, item],
+    );
+    setListingMessage(`${item.item?.title ?? item.title} added to cart.`);
+  }
+
+  function handleRemoveFromCart(itemId) {
+    setCartItems((current) => current.filter((item) => item.id !== itemId));
+  }
+
+  function toggleTheme() {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
   return (
@@ -1005,11 +1360,22 @@ export function App() {
         activeView={activeView}
         auth={auth}
         collapsed={isSidebarCollapsed}
+        location={buyerLocation}
         onGoogleSignIn={() => handleSignIn("Google")}
         onNavigate={navigate}
         onSignIn={() => handleSignIn()}
         onSignOut={handleSignOut}
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
+      />
+      <TopCommandBar
+        cartCount={cartItems.length}
+        location={buyerLocation}
+        onCartOpen={() => {
+          setSelectedListing(null);
+          setCartOpen(true);
+        }}
+        onThemeToggle={toggleTheme}
+        theme={theme}
       />
 
       {activeView === "home" && (
@@ -1027,38 +1393,66 @@ export function App() {
           isSignedIn={isSignedIn}
           isUploading={isUploading}
           listingMessage={listingMessage}
-          onConditionChange={handleConditionChange}
           onEvaluate={handleEvaluate}
           onFileSelected={handleFileSelected}
           onPublish={handlePublish}
           onSelectOrder={handleSelectOrder}
           orders={orders}
           selectedOrder={selectedOrder}
-          sellerCondition={sellerCondition}
         />
       )}
       {activeView === "marketplace" && (
         <MarketplaceView
+          categoryFilter={categoryFilter}
+          gradeFilter={gradeFilter}
           isLoading={isLoadingMarketplace}
           marketplace={marketplace}
+          onAddToCart={handleAddToCart}
+          onCategoryChange={setCategoryFilter}
+          onGradeChange={setGradeFilter}
           onOpenListing={handleOpenListing}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
           onSearch={setSearchTerm}
+          page={page}
+          pageSize={pageSize}
           searchTerm={searchTerm}
         />
       )}
       {activeView === "listings" && (
-        <MyListingsView listings={myListings} onOpenListing={handleOpenListing} />
+        <MyListingsView
+          listings={myListings}
+          onAddToCart={handleAddToCart}
+          onOpenListing={handleOpenListing}
+        />
       )}
       {activeView === "impact" && <ImpactView />}
-      {activeView === "settings" && <SettingsView />}
+      {activeView === "settings" && (
+        <SettingsView
+          buyerLocation={buyerLocation}
+          onBuyerLocationChange={setBuyerLocation}
+          onThemeToggle={toggleTheme}
+          theme={theme}
+        />
+      )}
+      <CompanyFooter />
 
       <ListingDrawer
+        buyerLocation={buyerLocation}
         checkoutState={checkoutState}
         isSignedIn={isSignedIn}
         listing={selectedListing}
+        onAddToCart={handleAddToCart}
         onBuy={handleBuy}
         onClose={() => setSelectedListing(null)}
         signedInCustomerId={signedInCustomerId}
+      />
+      <CartDrawer
+        buyerLocation={buyerLocation}
+        cartItems={isCartOpen ? cartItems : null}
+        onClose={() => setCartOpen(false)}
+        onOpenListing={handleOpenListing}
+        onRemove={handleRemoveFromCart}
       />
     </div>
   );

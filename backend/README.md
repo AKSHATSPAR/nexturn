@@ -20,7 +20,7 @@ price, listing status, and checkout split.
 - `POST /exchange/connect` links a certified refurbished alternative to the
   original order as a persisted exchange intent.
 - `GET /me` returns the Cognito-derived customer identity for protected flows.
-- `GET /c2c/orders` returns the signed-in customer's fake Amazon order history.
+- `GET /c2c/orders` returns the signed-in customer's Amazon order proof history.
 - `POST /c2c/listings/evaluate` grades a selected order item and returns a
   listing preview without publishing it.
 - `POST /c2c/listings` grades and publishes a C2C listing globally.
@@ -40,9 +40,10 @@ The demo should never depend on a vague AI promise. The rules are explicit,
 repeatable, and explainable. Rekognition enriches the scan evidence from a real
 AWS AI call, but the core customer decision remains stable and testable.
 
-For C2C listings, the backend compares the upload against fake Amazon order
-metadata. Damage-aware scoring means a broken-screen phone path receives a low
-grade such as `C`, not a fake high-confidence `A`.
+For C2C listings, the backend compares the upload against Amazon order proof
+metadata and the original order image when possible. Damage-aware scoring means
+a broken or visually distant product receives a low grade such as `C`, not an
+unearned high-confidence `A`.
 
 ## Local Invocation Fixtures
 

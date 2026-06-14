@@ -7,7 +7,7 @@ is involved: the item stays with the seller until a buyer purchases it.
 ## Prototype Boundary
 
 The prototype cannot connect to a real Amazon account, so it uses a hardcoded
-fake Amazon order history in `src/data/c2cCommerce.js`. That seeded history is
+Amazon order proof history in `src/data/c2cCommerce.js`. That seeded history is
 the authenticity anchor for the demo:
 
 - order ID;
@@ -23,7 +23,7 @@ buyer anxiety without requiring private Amazon APIs.
 
 ## Direct C2C Flow
 
-1. **Seller proof**: signed-in seller selects an item from fake Amazon order
+1. **Seller proof**: signed-in seller selects an item from Amazon order
    history.
 2. **Real item evidence**: seller uploads a current product photo.
 3. **AI and scorecard**: Rekognition checks visual evidence and NexTurn's
@@ -39,7 +39,7 @@ buyer anxiety without requiring private Amazon APIs.
 
 ## Production Adapter Flow
 
-In production, the fake order data becomes an adapter to Amazon order context:
+In production, the prototype order data becomes an adapter to Amazon order context:
 
 1. Import order ID, ASIN, SKU, product image, purchase price, return eligibility,
    customer identity, and package contents.

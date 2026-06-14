@@ -24,9 +24,10 @@ import {
   createListingFromEvaluation,
   findCustomerOrder,
   mergeMarketplaceListings,
+  normalizeIndiaLocation,
   ordersForCustomer,
 } from "../../src/lib/c2cCommerce.js";
-import { seedC2CListings } from "../../src/data/c2cCommerce.js";
+import { defaultBuyerLocation, indianServiceLocations, seedC2CListings } from "../../src/data/c2cCommerce.js";
 
 const headers = {
   "access-control-allow-origin": "*",
@@ -67,6 +68,7 @@ function getIdentity(event = {}) {
       customerId: returnCase.customer.id,
       email,
       name: returnCase.customer.name,
+      location: defaultBuyerLocation,
     };
   }
 
@@ -76,6 +78,7 @@ function getIdentity(event = {}) {
     customerId: `cognito#${claims.sub}`,
     email,
     name,
+    location: defaultBuyerLocation,
   };
 }
 
@@ -172,19 +175,53 @@ async function fetchGenericMarketplaceItems() {
   }
 
   try {
-    const response = await fetch("https://dummyjson.com/products?limit=120&select=id,title,price,thumbnail,category,rating");
+    const response = await fetch("https://dummyjson.com/products?limit=194&select=id,title,price,thumbnail,category,rating");
     if (!response.ok) throw new Error(`DummyJSON returned ${response.status}`);
     const payload = await response.json();
-    const items = (payload.products ?? []).map((product) => ({
-      id: `dummy_${product.id}`,
-      source: "dummyjson",
-      title: product.title,
-      category: product.category,
-      price: product.price,
-      image: product.thumbnail,
-      rating: product.rating,
-      badge: "Marketplace item",
-    }));
+    const standardCategories = {
+      beauty: "Beauty",
+      fragrances: "Beauty",
+      furniture: "Home",
+      groceries: "Food",
+      "home-decoration": "Home",
+      kitchen: "Home",
+      laptops: "Electronics",
+      "mens-shirts": "Fashion",
+      "mens-shoes": "Fashion",
+      "mens-watches": "Fashion",
+      "mobile-accessories": "Electronics",
+      motorcycle: "Automotive",
+      "skin-care": "Beauty",
+      smartphones: "Electronics",
+      sports: "Sports",
+      sunglasses: "Fashion",
+      tablets: "Electronics",
+      tops: "Fashion",
+      vehicle: "Automotive",
+      "womens-bags": "Fashion",
+      "womens-dresses": "Fashion",
+      "womens-jewellery": "Fashion",
+      "womens-shoes": "Fashion",
+      "womens-watches": "Fashion",
+    };
+    const items = (payload.products ?? []).map((product, index) => {
+      const sellerLocation = indianServiceLocations[index % indianServiceLocations.length];
+      return {
+        id: `dummy_${product.id}`,
+        source: "dummyjson",
+        title: product.title,
+        category: standardCategories[product.category] ?? "Lifestyle",
+        rawCategory: product.category,
+        price: Math.max(199, Math.round(Number(product.price ?? 10) * 84)),
+        image: product.thumbnail,
+        rating: product.rating,
+        badge: "Marketplace item",
+        sellerName: "Dummy seller",
+        sellerCity: sellerLocation.city,
+        sellerState: sellerLocation.state,
+        sellerLocation,
+      };
+    });
 
     if (items.length >= 100) {
       return {
@@ -229,12 +266,12 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
   if (!order) {
     return json(404, {
       error: "Order not found",
-      message: "Choose an item from the signed-in customer's fake Amazon order history.",
+      message: "Choose an item from the signed-in customer's connected Amazon order history.",
     });
   }
 
-  const sellerCondition = {
-    ...(body.sellerCondition ?? {}),
+  const uploadContext = {
+    ...(body.uploadContext ?? {}),
     fileName: body.fileName,
   };
   const { aiAnalysis, media } = await analyzeReturnImage({
@@ -248,7 +285,7 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     identity: auth.identity,
     media,
     order,
-    sellerCondition,
+    uploadContext,
     uploadedImagePreview: body.imageBase64,
   });
 
@@ -346,8 +383,17 @@ async function checkoutC2CListing(body, event) {
     });
   }
 
+  const buyerLocation = normalizeIndiaLocation(body.buyerLocation ?? defaultBuyerLocation);
+  if (!buyerLocation) {
+    return json(422, {
+      error: "Unsupported delivery location",
+      message: "NexTurn C2C delivery is currently available only for Indian addresses.",
+    });
+  }
+
   const receipt = createCheckoutReceipt({
     buyerIdentity: auth.identity,
+    buyerLocation,
     listing,
   });
   const persistence = await saveC2CCheckout(listing, receipt);

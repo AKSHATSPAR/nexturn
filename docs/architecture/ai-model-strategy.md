@@ -16,8 +16,8 @@ customer decision explainable:
   `POST /c2c/listings`;
 - the Lambda stores the image in a private S3 bucket when deployed;
 - Amazon Rekognition `DetectLabels` analyzes the uploaded image;
-- returned labels are filtered against the expected item category and shown as
-  matched or ignored AI evidence;
+- returned labels are compared against the expected item category, order
+  metadata, and the original order image labels when available;
 - the condition grade, resale discount, and checkout rules remain deterministic
   so customer-facing decisions are auditable.
 
@@ -34,10 +34,12 @@ system:
 - purchase-fit ranking: refurbished alternatives ranked by customer preference
   and predicted return risk.
 
-The visible condition chips in the seller UI are seller-declared hints, not the
-source of truth. They help the prototype express obvious packaging/wear cases,
-but they cannot override the AI identity gate. If the uploaded photo looks like
-a phone while the selected order is AirPods Max, NexTurn blocks listing.
+The seller UI no longer asks the customer to self-declare condition. The source
+of truth is the uploaded item photo compared with the selected order proof. If
+the uploaded photo looks like a phone while the selected order is AirPods Max,
+NexTurn blocks listing. If the product category matches but the photo is
+visually distant from the order proof, NexTurn lowers the grade for pickup
+verification instead of awarding an A grade.
 
 This makes the demo deterministic, testable, and safe for judges to repeat.
 
@@ -48,13 +50,14 @@ The implemented path already feeds the same engine with AWS AI-derived signals:
 1. Store uploaded return images in S3.
 2. Use Rekognition image analysis to detect product/category/scene labels.
 3. Compare labels with the expected returned item category. Relevant labels add
-   identity/accessory context; unrelated labels are shown as ignored evidence.
-4. For C2C, compare upload evidence against the selected fake Amazon order
+   identity/accessory context; unrelated dominant evidence is converted into a
+   customer-readable match/risk decision instead of a noisy label dump.
+4. For C2C, compare upload evidence against the selected Amazon order proof
    metadata and, when possible, the original order image labels.
 5. If uploaded evidence does not match the expected item, lower identity score
    and route the listing toward manual review.
-6. If the selected condition or evidence includes broken/cracked screen signals,
-   force a low grade such as `C`.
+6. If the visual comparison is weak, unrelated objects dominate the image, or
+   damage evidence is detected, force a low grade such as `C`.
 7. Persist extracted signals, grade, listing, media metadata, and checkout
    records in DynamoDB.
 
@@ -84,12 +87,13 @@ For the direct C2C marketplace:
 - grade-specific price retention.
 
 This is why an uploaded image of the wrong product should no longer look like a
-fake successful A- scan. The label mismatch is reflected in the UI, persisted as
-AI evidence, and used to increase the fraud-risk input before the scorecard runs.
+successful A- scan. The label mismatch is reflected in the UI, persisted as AI
+evidence, and used to increase the fraud-risk input before the scorecard runs.
 
-This is also why a broken phone screen does not stay highly graded. The C2C
-scorecard clamps functional and cosmetic scores when broken-screen evidence is
-declared or detected, producing a low grade and a steep discount.
+This is also why a broken or visually distant product does not stay highly
+graded. The C2C scorecard clamps functional and cosmetic scores when damage
+evidence, weak product confidence, or low order-photo similarity is detected,
+producing a low grade and a steep discount.
 
 The matching logic intentionally ignores broad labels such as `Electronics` or
 `Device` for identity. A generic electronics label is not enough proof that the

@@ -273,6 +273,13 @@ function formatLabels(labels) {
     .map((label) => `${label.name ?? label.Name} ${Math.round(label.confidence ?? label.Confidence ?? 0)}%`);
 }
 
+function topConfidence(labels) {
+  return labels.reduce(
+    (highest, label) => Math.max(highest, Number(label.confidence ?? label.Confidence ?? 0)),
+    0,
+  );
+}
+
 async function detectLabelsFromBytes(bytes) {
   const response = await getRekognitionClient().send(
     new DetectLabelsCommand({
@@ -358,10 +365,7 @@ function compareUploadedToReference({ uploadedLabels, referenceLabels = [] }) {
 
 function summarizeRelevantLabels({ relevant, ignored, identityStatus, returnCase }) {
   if (identityStatus === "mismatch") {
-    const rawLabels = formatLabels(ignored);
-    return `Uploaded photo does not match the selected Amazon order item (${returnCase.item.title}). Choose the correct order or upload the correct product photo${
-      rawLabels.length ? `; unrelated labels seen: ${rawLabels.join(", ")}.` : "."
-    }`;
+    return `Uploaded photo does not match the selected order proof for ${returnCase.item.title}. Choose the matching order or upload the correct product photo.`;
   }
 
   const topLabels = formatLabels(relevant);
@@ -369,10 +373,7 @@ function summarizeRelevantLabels({ relevant, ignored, identityStatus, returnCase
     return "AWS Rekognition did not return confident labels for this image.";
   }
 
-  const ignoredLabels = formatLabels(ignored);
-  return `Visual identity check matched expected ${returnCase.item.category} evidence: ${topLabels.join(", ")}.${
-    ignoredLabels.length ? ` Ignored unrelated labels: ${ignoredLabels.join(", ")}.` : ""
-  }`;
+  return `Uploaded photo matches the selected order category. NexTurn still grades condition from visual similarity and damage-risk signals before pricing.`;
 }
 
 export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fileName }) {
@@ -423,6 +424,12 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
       rawLabels,
       returnCase,
     );
+    const topRelevantConfidence = topConfidence(relevant);
+    const topIgnoredConfidence = topConfidence(ignored);
+    const dominantUnrelatedEvidence =
+      topIgnoredConfidence >= 80 && topIgnoredConfidence - topRelevantConfidence >= 18;
+    const weakProductEvidence =
+      identityStatus === "matched" && topRelevantConfidence > 0 && topRelevantConfidence < 72;
     const inspectionSignals = buildSignals(relevant.length ? relevant : rawLabels, returnCase);
 
     return {
@@ -437,6 +444,10 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
         identityStatus,
         identityComparison: {
           ...comparison,
+          topRelevantConfidence,
+          topIgnoredConfidence,
+          dominantUnrelatedEvidence,
+          weakProductEvidence,
           method: referenceComparison.compared
             ? "rekognition-upload-vs-order-photo-and-metadata"
             : comparison.method,

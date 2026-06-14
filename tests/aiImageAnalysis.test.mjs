@@ -6,7 +6,7 @@ import {
   decodeImagePayload,
 } from "../backend/lib/aiImageAnalysis.js";
 import { returnCase } from "../src/data/returnCase.js";
-import { fakeOrderHistory } from "../src/data/c2cCommerce.js";
+import { orderProofHistory } from "../src/data/c2cCommerce.js";
 
 const tinyPng =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
@@ -32,7 +32,7 @@ test("returns transparent no-upload mode without calling AWS", async () => {
 });
 
 test("does not accept broad electronics labels as an audio product match", () => {
-  const airpodsOrder = fakeOrderHistory[0];
+  const airpodsOrder = orderProofHistory[0];
   const comparison = compareLabelsToExpectedItem(
     [
       {

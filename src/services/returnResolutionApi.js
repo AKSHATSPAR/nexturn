@@ -212,21 +212,21 @@ export async function fetchC2CMarketplace() {
   return response.json();
 }
 
-async function buildListingPayload(file, orderId, sellerCondition = {}) {
+async function buildListingPayload(file, orderId) {
   const imageBase64 = file ? await readFileAsDataUrl(file) : undefined;
 
   return {
     orderId,
-    sellerCondition,
+    uploadContext: {},
     fileName: file?.name,
     mimeType: file?.type,
     imageBase64,
   };
 }
 
-export async function evaluateC2CListingUpload(file, orderId, sellerCondition = {}) {
+export async function evaluateC2CListingUpload(file, orderId) {
   const apiBaseUrl = getApiBaseUrl();
-  const payload = await buildListingPayload(file, orderId, sellerCondition);
+  const payload = await buildListingPayload(file, orderId);
 
   if (apiBaseUrl === null) {
     const {
@@ -253,8 +253,7 @@ export async function evaluateC2CListingUpload(file, orderId, sellerCondition = 
           email: "local@nexturn.local",
         },
         order,
-        sellerCondition: {
-          ...sellerCondition,
+        uploadContext: {
           fileName: file?.name,
         },
         uploadedImagePreview: payload.imageBase64,
@@ -282,12 +281,12 @@ export async function evaluateC2CListingUpload(file, orderId, sellerCondition = 
   };
 }
 
-export async function createC2CListing(file, orderId, sellerCondition = {}) {
+export async function createC2CListing(file, orderId) {
   const apiBaseUrl = getApiBaseUrl();
-  const payload = await buildListingPayload(file, orderId, sellerCondition);
+  const payload = await buildListingPayload(file, orderId);
 
   if (apiBaseUrl === null) {
-    const preview = await evaluateC2CListingUpload(file, orderId, sellerCondition);
+    const preview = await evaluateC2CListingUpload(file, orderId);
     return {
       ...preview,
       persisted: false,
@@ -309,7 +308,7 @@ export async function createC2CListing(file, orderId, sellerCondition = {}) {
   return response.json();
 }
 
-export async function checkoutC2CListing(listingId) {
+export async function checkoutC2CListing(listingId, buyerLocation) {
   const apiBaseUrl = getApiBaseUrl();
 
   if (apiBaseUrl === null) {
@@ -328,6 +327,7 @@ export async function checkoutC2CListing(listingId) {
     return {
       receipt: createCheckoutReceipt({
         buyerIdentity: { customerId: "local_buyer", email: "local@nexturn.local" },
+        buyerLocation,
         listing,
       }),
       persistence: { mode: "local", persisted: false },
@@ -338,7 +338,7 @@ export async function checkoutC2CListing(listingId) {
   const response = await fetch(`${apiBaseUrl}/c2c/checkout`, {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify({ listingId }),
+    body: JSON.stringify({ listingId, buyerLocation }),
   });
 
   if (!response.ok) {
