@@ -212,11 +212,58 @@ export async function fetchC2CMarketplace() {
   return response.json();
 }
 
-async function buildListingPayload(file, orderId) {
+export async function fetchC2CProfile() {
+  const apiBaseUrl = getApiBaseUrl();
+  if (apiBaseUrl === null) {
+    return {
+      profile: JSON.parse(localStorage.getItem("nexturn.profile.local") ?? "null"),
+      profileComplete: Boolean(localStorage.getItem("nexturn.profile.local")),
+      persistence: { mode: "local", persisted: false },
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/profile`, {
+    headers: jsonHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await apiError("load your profile", response);
+  }
+
+  return response.json();
+}
+
+export async function saveC2CProfile(profile) {
+  const apiBaseUrl = getApiBaseUrl();
+  if (apiBaseUrl === null) {
+    localStorage.setItem("nexturn.profile.local", JSON.stringify(profile));
+    return {
+      profile,
+      profileComplete: true,
+      persistence: { mode: "local", persisted: false },
+      customerMessage: "Profile saved locally.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/profile`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ profile }),
+  });
+
+  if (!response.ok) {
+    throw await apiError("save your profile", response);
+  }
+
+  return response.json();
+}
+
+async function buildListingPayload(file, orderId, profile) {
   const imageBase64 = file ? await readFileAsDataUrl(file) : undefined;
 
   return {
     orderId,
+    profile,
     uploadContext: {},
     fileName: file?.name,
     mimeType: file?.type,
@@ -224,9 +271,9 @@ async function buildListingPayload(file, orderId) {
   };
 }
 
-export async function evaluateC2CListingUpload(file, orderId) {
+export async function evaluateC2CListingUpload(file, orderId, profile) {
   const apiBaseUrl = getApiBaseUrl();
-  const payload = await buildListingPayload(file, orderId);
+  const payload = await buildListingPayload(file, orderId, profile);
 
   if (apiBaseUrl === null) {
     const {
@@ -251,6 +298,7 @@ export async function evaluateC2CListingUpload(file, orderId) {
           customerId: "local_customer",
           name: "Local Customer",
           email: "local@nexturn.local",
+          address: profile?.address,
         },
         order,
         uploadContext: {
@@ -281,12 +329,12 @@ export async function evaluateC2CListingUpload(file, orderId) {
   };
 }
 
-export async function createC2CListing(file, orderId) {
+export async function createC2CListing(file, orderId, profile) {
   const apiBaseUrl = getApiBaseUrl();
-  const payload = await buildListingPayload(file, orderId);
+  const payload = await buildListingPayload(file, orderId, profile);
 
   if (apiBaseUrl === null) {
-    const preview = await evaluateC2CListingUpload(file, orderId);
+    const preview = await evaluateC2CListingUpload(file, orderId, profile);
     return {
       ...preview,
       persisted: false,
@@ -303,6 +351,47 @@ export async function createC2CListing(file, orderId) {
 
   if (!response.ok) {
     throw await apiError("publish this C2C listing", response);
+  }
+
+  return response.json();
+}
+
+export async function joinC2CInterestQueue(listingId, profile) {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl === null) {
+    const [
+      { createInterestQueueEntry },
+      { seedC2CListings },
+    ] = await Promise.all([
+      import("../lib/c2cCommerce.js"),
+      import("../data/c2cCommerce.js"),
+    ]);
+    const listing = seedC2CListings.find((item) => item.id === listingId);
+
+    return {
+      interest: createInterestQueueEntry({
+        buyerIdentity: {
+          customerId: "local_buyer",
+          email: "local@nexturn.local",
+          name: "Local Buyer",
+        },
+        buyerProfile: profile,
+        listing,
+      }),
+      persistence: { mode: "local", persisted: false },
+      customerMessage: "Added to local buyer queue.",
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/c2c/interest`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ listingId, profile }),
+  });
+
+  if (!response.ok) {
+    throw await apiError("join this buyer queue", response);
   }
 
   return response.json();

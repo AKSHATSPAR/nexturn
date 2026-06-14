@@ -2,7 +2,8 @@
 
 NexTurn is designed as a direct Customer-to-Customer layer beside Amazon's
 commerce and returns experience. The important product rule is that no warehouse
-is involved: the item stays with the seller until a buyer purchases it.
+is involved: the item stays with the seller until a buyer joins the queue and
+pickup verification unlocks payment.
 
 ## Prototype Boundary
 
@@ -26,16 +27,19 @@ buyer anxiety without requiring private Amazon APIs.
 1. **Seller proof**: signed-in seller selects an item from Amazon order
    history.
 2. **Real item evidence**: seller uploads a current product photo.
-3. **AI and scorecard**: Rekognition checks visual evidence and NexTurn's
-   deterministic scorecard assigns grade and resale price.
+3. **AI comparison**: Rekognition checks product identity, order-photo
+   similarity, dominant colour/variant, and visible damage risk. NexTurn assigns
+   a preliminary grade and resale value.
 4. **Marketplace listing**: item is listed with "AI Graded & Amazon Verified"
    badge.
 5. **No warehouse hold**: seller keeps the item at home.
-6. **Buyer inspection**: buyer sees order proof, scorecard, discount, and
-   delivery fee before checkout.
-7. **Mock checkout**: buyer pays discounted price plus Amazon Delivery Fee.
-8. **Facilitated delivery**: Amazon delivery partner verifies quality at seller
-   pickup and delivers to buyer.
+6. **Buyer queue**: buyer sees order proof, original purchase date, preliminary
+   AI comparison, seller location, and estimated delivery fee before joining the
+   queue.
+7. **Payment locked**: no payment is collected from the buyer yet.
+8. **Facilitated delivery**: Amazon delivery partner verifies identity,
+   colour/variant, and visible condition at seller pickup. Only then does the
+   final payment step open.
 
 ## Production Adapter Flow
 
@@ -44,17 +48,20 @@ In production, the prototype order data becomes an adapter to Amazon order conte
 1. Import order ID, ASIN, SKU, product image, purchase price, return eligibility,
    customer identity, and package contents.
 2. Use S3 for seller upload media and Rekognition for visual evidence.
-3. Persist listing, grade, AI evidence, seller, and checkout records in DynamoDB.
-4. Keep listing inventory with the seller until checkout.
-5. Trigger Amazon local delivery after payment simulation or real payment.
-6. Let the delivery partner verify item quality at pickup against the AI
-   scorecard and uploaded evidence.
+3. Persist customer profile, listing, grade, AI evidence, seller, and buyer
+   queue records in DynamoDB.
+4. Keep listing inventory with the seller until pickup verification.
+5. Trigger Amazon local delivery after a buyer joins the queue and the seller is
+   ready for pickup.
+6. Let the delivery partner verify item quality at pickup against the order
+   proof, uploaded evidence, and preliminary AI result before payment opens.
 
 ## Why This Is Customer-Centric
 
 - Sellers recover value without mailing usable items to a warehouse first.
 - Buyers get proof-backed second-hand items instead of anonymous listings.
-- The platform clearly separates seller payment from Amazon's delivery fee.
+- The platform clearly separates seller item value from Amazon's delivery fee,
+  while delaying payment until pickup verification.
 - Trust improves because the original purchase, current condition, and pickup
   verification are visible before checkout.
 - Sustainability improves because unnecessary warehouse movement is avoided.
@@ -62,7 +69,7 @@ In production, the prototype order data becomes an adapter to Amazon order conte
 ## Free Tier Fit
 
 - HTTP API + Lambda for the API surface.
-- DynamoDB on-demand for listings and receipts.
+- DynamoDB on-demand for profiles, listings, and buyer queue records.
 - S3 for uploaded scan media.
 - Cognito Hosted UI for unified buyer/seller accounts and Google federation.
 - Rekognition `DetectLabels` for practical AWS AI evidence.

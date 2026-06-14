@@ -154,7 +154,7 @@ export const seedC2CListings = [
       label: "Excellent",
       score: 91,
       confidence: "High confidence",
-      summary: "Light ear-cup wear, all functional checks passed.",
+      summary: "Strong order-photo match with light visible wear.",
     },
     scorecard: {
       functionalScore: 96,
@@ -169,7 +169,7 @@ export const seedC2CListings = [
     deliveryFee: 189,
     badge: "AI Graded & Amazon Verified",
     logistics:
-      "Seller keeps the item at home. Amazon delivery partner verifies condition at pickup after purchase.",
+      "Seller keeps the item at home. Buyers join the queue; payment opens only after pickup verification.",
   },
   {
     id: "seed_listing_watch_s9",
@@ -189,7 +189,7 @@ export const seedC2CListings = [
       label: "Very good",
       score: 84,
       confidence: "High confidence",
-      summary: "Minor strap marks, no screen damage, charger included.",
+      summary: "Order-photo match with minor strap marks and no visible screen damage.",
     },
     scorecard: {
       functionalScore: 94,
@@ -204,7 +204,7 @@ export const seedC2CListings = [
     deliveryFee: 239,
     badge: "AI Graded & Amazon Verified",
     logistics:
-      "Seller keeps the item at home. Amazon delivery partner verifies condition at pickup after purchase.",
+      "Seller keeps the item at home. Buyers join the queue; payment opens only after pickup verification.",
   },
   {
     id: "seed_listing_tab_s9",
@@ -224,7 +224,7 @@ export const seedC2CListings = [
       label: "Good",
       score: 74,
       confidence: "Medium confidence",
-      summary: "Visible back-panel scuffs, display functional, S Pen included.",
+      summary: "Order-photo match with visible back-panel scuffs.",
     },
     scorecard: {
       functionalScore: 89,
@@ -239,6 +239,6 @@ export const seedC2CListings = [
     deliveryFee: 189,
     badge: "AI Graded & Amazon Verified",
     logistics:
-      "Seller keeps the item at home. Amazon delivery partner verifies condition at pickup after purchase.",
+      "Seller keeps the item at home. Buyers join the queue; payment opens only after pickup verification.",
   },
 ];

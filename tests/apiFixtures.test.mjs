@@ -128,6 +128,16 @@ function authenticatedEvent(rawPath, method = "GET", body) {
   };
 }
 
+const completeProfile = {
+  address: {
+    addressLine: "21 Race Course Road",
+    city: "Vadodara",
+    state: "Gujarat",
+    country: "IN",
+    pincode: "390007",
+  },
+};
+
 test("c2c order history requires auth and returns five proof-backed orders", async () => {
   const unauthenticated = await handler({
     rawPath: "/c2c/orders",
@@ -162,6 +172,7 @@ test("c2c cracked screen evaluation produces a low condition grade", async () =>
     authenticatedEvent("/c2c/listings/evaluate", "POST", {
       orderId: "114-8829301-2210045",
       fileName: "broken-screen-phone.jpg",
+      profile: completeProfile,
     }),
   );
   const body = JSON.parse(response.body);
@@ -170,19 +181,34 @@ test("c2c cracked screen evaluation produces a low condition grade", async () =>
   assert.equal(body.listingPreview.grade.grade, "C");
   assert.ok(body.listingPreview.scorecard.damageFlags.includes("broken_screen"));
   assert.ok(body.listingPreview.price < body.order.originalPrice * 0.35);
+  assert.equal(body.listingPreview.review.paymentUnlocked, false);
 });
 
-test("c2c checkout simulates payment split and pickup logistics", async () => {
+test("c2c interest queue locks payment until pickup review", async () => {
   const response = await handler(
-    authenticatedEvent("/c2c/checkout", "POST", {
+    authenticatedEvent("/c2c/interest", "POST", {
       listingId: "seed_listing_airpods_max",
+      profile: completeProfile,
     }),
   );
   const body = JSON.parse(response.body);
 
   assert.equal(response.statusCode, 200);
-  assert.equal(body.receipt.status, "payment_simulated");
-  assert.ok(body.receipt.deliveryFee >= 79);
-  assert.equal(body.receipt.logisticsStatus, "pickup_scheduled");
-  assert.match(body.customerMessage, /seller/i);
+  assert.equal(body.interest.status, "queued_for_pickup_review");
+  assert.equal(body.interest.paymentStatus, "locked_until_pickup_review");
+  assert.ok(body.interest.estimatedDeliveryFee >= 79);
+  assert.match(body.customerMessage, /payment remains locked/i);
+});
+
+test("c2c checkout is locked before manual pickup verification", async () => {
+  const response = await handler(
+    authenticatedEvent("/c2c/checkout", "POST", {
+      listingId: "seed_listing_airpods_max",
+      buyerLocation: completeProfile.address,
+    }),
+  );
+  const body = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 409);
+  assert.match(body.message, /pickup/i);
 });

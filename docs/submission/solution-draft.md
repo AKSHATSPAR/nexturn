@@ -68,8 +68,9 @@ Demo evidence:
 
 ### Condition Grade
 
-The grade combines functional score, cosmetic wear, accessory completeness,
-hygiene, packaging, and fraud risk. The result is explainable and repeatable.
+The grade combines product identity, original-order image similarity,
+colour/variant match, visible damage risk, and fraud risk. The result is
+explainable and repeatable, and remains preliminary until pickup verification.
 
 ### Route Ranking
 

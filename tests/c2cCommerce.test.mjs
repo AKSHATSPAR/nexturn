@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { orderProofHistory } from "../src/data/c2cCommerce.js";
-import { createListingFromEvaluation, mergeMarketplaceListings } from "../src/lib/c2cCommerce.js";
+import {
+  createInterestQueueEntry,
+  createListingFromEvaluation,
+  mergeMarketplaceListings,
+} from "../src/lib/c2cCommerce.js";
 
 test("blocks marketplace publishing when uploaded photo mismatches selected order", () => {
   const listing = createListingFromEvaluation({
@@ -64,6 +68,94 @@ test("downgrades weak visual matches even when the broad product category matche
   assert.equal(listing.publishable, true);
   assert.equal(listing.grade.grade, "C");
   assert.ok(listing.scorecard.damageFlags.includes("visual_condition_risk"));
+});
+
+test("downgrades same-category uploads when the color variant does not match order proof", () => {
+  const listing = createListingFromEvaluation({
+    aiAnalysis: {
+      provider: "aws-rekognition",
+      mode: "live",
+      usedAws: true,
+      identityStatus: "matched",
+      labels: [{ name: "Headphones", confidence: 96 }],
+      rawLabels: [{ name: "Headphones", confidence: 96 }],
+      identityComparison: {
+        topRelevantConfidence: 96,
+        topIgnoredConfidence: 0,
+        colorMismatch: true,
+        colorComparison: {
+          status: "mismatch",
+          expectedFamilies: ["silver"],
+          uploadedFamilies: ["black"],
+          uploadedColors: [{ family: "black", pixelPercent: 64 }],
+        },
+      },
+    },
+    identity: {
+      customerId: "cognito#seller",
+      name: "Seller",
+      email: "seller@example.com",
+    },
+    media: { persisted: true, mode: "s3" },
+    order: orderProofHistory[0],
+    uploadContext: {},
+  });
+
+  assert.equal(listing.publishable, true);
+  assert.notEqual(listing.grade.grade, "A");
+  assert.equal(listing.grade.grade, "B");
+  assert.equal(listing.review.colorStatus, "mismatch");
+  assert.equal(listing.review.paymentUnlocked, false);
+});
+
+test("creates buyer interest queue records without opening payment", () => {
+  const listing = createListingFromEvaluation({
+    aiAnalysis: {
+      provider: "aws-rekognition",
+      mode: "live",
+      usedAws: true,
+      identityStatus: "matched",
+      labels: [{ name: "Headphones", confidence: 96 }],
+      rawLabels: [{ name: "Headphones", confidence: 96 }],
+      identityComparison: { topRelevantConfidence: 96 },
+    },
+    identity: {
+      customerId: "cognito#seller",
+      name: "Seller",
+      email: "seller@example.com",
+      address: {
+        addressLine: "1 Indiranagar",
+        city: "Bengaluru",
+        state: "Karnataka",
+        country: "IN",
+        pincode: "560038",
+      },
+    },
+    media: { persisted: true, mode: "s3" },
+    order: orderProofHistory[0],
+    uploadContext: {},
+  });
+  const interest = createInterestQueueEntry({
+    buyerIdentity: {
+      customerId: "cognito#buyer",
+      email: "buyer@example.com",
+      name: "Buyer",
+    },
+    buyerProfile: {
+      address: {
+        addressLine: "21 Race Course Road",
+        city: "Vadodara",
+        state: "Gujarat",
+        country: "IN",
+        pincode: "390007",
+      },
+    },
+    listing,
+  });
+
+  assert.equal(interest.status, "queued_for_pickup_review");
+  assert.equal(interest.paymentStatus, "locked_until_pickup_review");
+  assert.ok(interest.estimatedDeliveryFee >= 79);
 });
 
 test("normalizes legacy persisted listings into INR marketplace data", () => {

@@ -1,5 +1,15 @@
 import { handler } from "../backend/lambda/returnResolution.js";
 
+const smokeProfile = {
+  address: {
+    addressLine: "21 Race Course Road",
+    city: "Vadodara",
+    state: "Gujarat",
+    country: "IN",
+    pincode: "390007",
+  },
+};
+
 const calls = [
   {
     name: "fetch case",
@@ -128,14 +138,14 @@ const calls = [
       body: JSON.stringify({
         orderId: "114-8829301-2210045",
         fileName: "broken-screen-phone.jpg",
-        sellerCondition: { preset: "cracked_screen" },
+        profile: smokeProfile,
       }),
     },
   },
   {
-    name: "checkout c2c listing",
+    name: "join c2c interest queue",
     event: {
-      rawPath: "/c2c/checkout",
+      rawPath: "/c2c/interest",
       requestContext: {
         authorizer: {
           jwt: {
@@ -148,7 +158,10 @@ const calls = [
         },
         http: { method: "POST" },
       },
-      body: JSON.stringify({ listingId: "seed_listing_airpods_max" }),
+      body: JSON.stringify({
+        listingId: "seed_listing_airpods_max",
+        profile: smokeProfile,
+      }),
     },
   },
 ];
@@ -166,6 +179,7 @@ for (const call of calls) {
       body.selectedRoute?.id ??
       body.exchangeIntent?.alternativeId ??
       body.listingPreview?.grade?.grade ??
+      body.interest?.status ??
       body.receipt?.status ??
       body.heroListings?.length ??
       body.orders?.length ??

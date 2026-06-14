@@ -2,8 +2,9 @@
 
 NexTurn is a direct Customer-to-Customer second-life commerce prototype for
 returned and underused products. The core product rule is simple: no warehouse
-touches the item. The seller keeps the product at home until a buyer purchases
-it, then Amazon facilitates local pickup, quality check, and delivery.
+touches the item. The seller keeps the product at home until a buyer joins the
+queue and pickup verification unlocks payment; Amazon facilitates local pickup,
+quality check, and delivery.
 
 ## Customer Problem
 
@@ -13,7 +14,8 @@ because condition and authenticity are unclear. NexTurn solves this from both
 sides of one unified account:
 
 - sellers list real products from verified order history;
-- buyers inspect proof, AI evidence, scorecard, and delivery fee split;
+- buyers inspect order proof, preliminary AI comparison, purchase date, seller
+  location, and estimated delivery fee before joining the buyer queue;
 - Amazon acts as the trust and logistics layer, not as a warehouse middle step.
 
 ## Implemented Prototype
@@ -21,22 +23,26 @@ sides of one unified account:
 - Unified Buyer + Seller account shell with Cognito Hosted UI and optional Google
   sign-in.
 - Sell / Return Items hub gated behind login.
-- Prototype Amazon order proof history with 5 high-value products, original
+- Amazon order proof history with 5 high-value products, original
   price, purchase date, ASIN, original product image, and proof metadata.
 - Real upload flow for seller item photos.
 - AWS Rekognition image evidence on deployed API, combined with deterministic
-  photo comparison scoring for product identity, visual similarity, condition
-  risk, packaging, accessory, and identity signals.
+  photo comparison for product identity, order-photo similarity, dominant
+  colour/variant, and visible damage risk.
 - Damage-aware grading: cracked or broken screen evidence forces low grades like
-  `C` instead of pretending every upload is `A`.
-- Dynamic discounted resale price based on grade.
+  `C`, and variant or colour mismatches cannot receive an `A`.
+- Dynamic preliminary resale value based on the AI comparison result.
+- Address-gated accounts: every signed-in account must save an India delivery
+  address before listing an item or joining a buyer queue.
 - Global C2C marketplace that merges NexTurn AI-graded listings with 100+ public
   API background products from DummyJSON.
-- Listing detail drawer with transparent scorecard, original order proof,
-  discounted price, and "AI Graded & Amazon Verified" badge.
-- Mock checkout: buyer pays item price plus route-based Amazon Delivery Fee. The
-  item payment is assigned to the seller; Amazon only facilitates local delivery.
-- DynamoDB persistence for created listings and checkout receipts.
+- Listing detail drawer with transparent order proof, purchase date, AI
+  comparison result, preliminary price, delivery estimate, and "AI Graded &
+  Amazon Verified" badge.
+- Buyer queue flow: buyers express interest, payment remains locked, and the
+  final value is confirmed only after manual pickup inspection.
+- DynamoDB persistence for customer profiles, created listings, and buyer queue
+  interest records.
 - S3 media persistence and Rekognition permissions in the AWS CDK stack.
 
 ## Architecture
@@ -52,8 +58,8 @@ flowchart LR
   Lambda --> Orders["Amazon order proof history"]
   Lambda --> Rekognition["Amazon Rekognition"]
   Lambda --> S3["Private S3 scan media"]
-  Lambda --> Scorecard["Explainable grade + price engine"]
-  Lambda --> DDB["DynamoDB listings + checkout"]
+  Lambda --> Grading["AI comparison + preliminary price engine"]
+  Lambda --> DDB["DynamoDB profiles, listings + buyer queues"]
   Lambda --> PublicFeed["DummyJSON public marketplace feed"]
   DDB --> Marketplace["Global C2C marketplace"]
 ```
@@ -61,18 +67,19 @@ flowchart LR
 ## Main Flow
 
 1. Seller signs in.
-2. Seller opens Sell / Return Items and selects a product from Amazon order
+2. Seller saves an India delivery address in Profile.
+3. Seller opens Sell / Return Items and selects a product from Amazon order
    history.
-3. Seller uploads a real item photo.
-4. Backend compares the upload against the order proof photo and metadata, then
-   calculates grade and discounted resale price.
-5. Seller publishes the listing. The item stays with the seller at home.
-6. Another signed-in buyer opens Marketplace and sees the listing above the
-   public API product feed.
-7. Buyer opens the listing, checks order proof, scorecard, price, and delivery
-   split.
-8. Buyer clicks Buy now. Payment is simulated, checkout receipt is persisted, and
-   pickup is scheduled from the seller home.
+4. Seller uploads a real item photo.
+5. Backend compares the upload against the order proof photo, metadata, and
+   expected colour/variant, then calculates a preliminary grade and resale value.
+6. Seller publishes the listing. The item stays with the seller at home.
+7. Another signed-in buyer saves an India delivery address, opens Marketplace,
+   and sees the listing above the public API product feed.
+8. Buyer opens the listing, checks order proof, original purchase date,
+   preliminary AI comparison, price, seller location, and estimated delivery fee.
+9. Buyer joins the buyer queue. Payment stays locked until an Amazon delivery
+   partner verifies the item at pickup and opens the final payment step.
 
 ## Local Development
 
@@ -113,8 +120,8 @@ Google sign-in is configuration-gated. Set `GOOGLE_CLIENT_ID` and
 - `src/App.jsx` - C2C buyer/seller web app.
 - `src/data/c2cCommerce.js` - order proof history, demo accounts, seed listings,
   and supported India delivery locations.
-- `src/lib/c2cCommerce.js` - scorecard, grade, pricing, listing, and checkout
-  rules.
+- `src/lib/c2cCommerce.js` - product comparison, grading, pricing, address,
+  delivery, listing, and buyer queue rules.
 - `backend/lambda/returnResolution.js` - Lambda-compatible API handler.
 - `backend/lib/aiImageAnalysis.js` - S3 upload and Amazon Rekognition analysis.
 - `backend/lib/dynamodbRepository.js` - DynamoDB persistence adapter.

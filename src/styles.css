@@ -110,7 +110,7 @@
 }
 
 .c2c-metric strong {
-  color: #111c25;
+  color: var(--text);
   font-size: 30px;
 }
 
@@ -583,6 +583,7 @@
   object-fit: contain;
   background: #f7f9f8;
   border-radius: 8px;
+  filter: drop-shadow(0 14px 18px rgba(16, 24, 32, 0.18)) contrast(1.04);
 }
 
 .listing-badge {
@@ -897,6 +898,7 @@
 .upload-dropzone,
 .market-search,
 .filter-control,
+.settings-input,
 .settings-select,
 .settings-button {
   color: var(--text);
@@ -982,6 +984,7 @@
 
 .filter-control select,
 .pagination-bar select,
+.settings-input,
 .settings-select {
   color: var(--text);
   background: transparent;
@@ -1154,6 +1157,7 @@
   max-width: none;
 }
 
+.settings-input,
 .settings-select,
 .settings-button {
   min-width: 220px;
@@ -1166,6 +1170,26 @@
 
 .settings-button {
   width: auto;
+}
+
+.settings-input::placeholder {
+  color: var(--muted);
+}
+
+.profile-gate {
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.impact-explainer p {
+  max-width: 880px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.ai-evidence-grid.compact {
+  margin-bottom: 0;
 }
 
 .company-footer {

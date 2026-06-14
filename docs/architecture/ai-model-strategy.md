@@ -17,20 +17,21 @@ customer decision explainable:
 - the Lambda stores the image in a private S3 bucket when deployed;
 - Amazon Rekognition `DetectLabels` analyzes the uploaded image;
 - returned labels are compared against the expected item category, order
-  metadata, and the original order image labels when available;
-- the condition grade, resale discount, and checkout rules remain deterministic
-  so customer-facing decisions are auditable.
+  metadata, dominant colour/variant, and the original order image labels when
+  available;
+- the preliminary grade, resale value, and buyer-queue rules remain
+  deterministic so customer-facing decisions are auditable.
 
 The decision engine behaves like the customer-facing policy layer of an AI
 system:
 
-- scan signals: cosmetic wear, function score, accessories, hygiene, packaging,
-  demand, price retention, and fraud risk;
+- scan signals: visual condition, function confidence, hygiene, demand, price
+  retention, and fraud risk;
 - condition grade: weighted scoring with confidence and reason text;
 - route ranking: resell, exchange, donate, and recycle compared by value,
   convenience, sustainability, demand, and risk;
-- C2C listing scorecard: functional, cosmetic, packaging, accessory, identity,
-  and damage signals;
+- C2C listing policy: product identity, order-photo similarity, colour/variant
+  match, visible damage risk, and pickup-review status;
 - purchase-fit ranking: refurbished alternatives ranked by customer preference
   and predicted return risk.
 
@@ -50,50 +51,44 @@ The implemented path already feeds the same engine with AWS AI-derived signals:
 1. Store uploaded return images in S3.
 2. Use Rekognition image analysis to detect product/category/scene labels.
 3. Compare labels with the expected returned item category. Relevant labels add
-   identity/accessory context; unrelated dominant evidence is converted into a
+   product identity context; unrelated dominant evidence is converted into a
    customer-readable match/risk decision instead of a noisy label dump.
 4. For C2C, compare upload evidence against the selected Amazon order proof
-   metadata and, when possible, the original order image labels.
+   metadata, expected colour/variant, and, when possible, the original order
+   image labels.
 5. If uploaded evidence does not match the expected item, lower identity score
    and route the listing toward manual review.
 6. If the visual comparison is weak, unrelated objects dominate the image, or
    damage evidence is detected, force a low grade such as `C`.
-7. Persist extracted signals, grade, listing, media metadata, and checkout
-   records in DynamoDB.
+7. Persist extracted signals, grade, listing, media metadata, profile data, and
+   buyer queue records in DynamoDB.
 
 ## How The Grade Is Decided
 
-Rekognition does not decide that an item is A-, B+, or C. The grade comes from a
-weighted scorecard.
+Rekognition does not decide that an item is A-, B+, or C. It produces visual
+evidence; NexTurn's policy layer converts that evidence into a preliminary grade
+and value.
 
-For the original return-resolution flow:
+For the original return-resolution flow, the policy layer weighs functional
+confidence, visible wear, hygiene, fraud risk, resale demand, and customer value.
 
-- functional score;
-- cosmetic wear;
-- accessory completeness;
-- hygiene score;
-- packaging score;
-- fraud-risk signal;
-- resale demand.
+For the direct C2C marketplace, the visible customer decision comes from:
 
-For the direct C2C marketplace:
-
-- functional score;
-- cosmetic score;
-- packaging score;
-- accessory completeness;
-- identity score from order/photo match;
-- damage flags such as `broken_screen`;
-- grade-specific price retention.
+- identity match against the selected order item;
+- visual similarity with the original order image;
+- dominant colour/variant match;
+- visible damage risk, including cracked screens or broken parts;
+- grade-specific price retention;
+- manual pickup review requirement before payment opens.
 
 This is why an uploaded image of the wrong product should no longer look like a
-successful A- scan. The label mismatch is reflected in the UI, persisted as AI
-evidence, and used to increase the fraud-risk input before the scorecard runs.
+successful A- scan. The mismatch is reflected in the UI, persisted as AI
+evidence, and used to block or downgrade the listing before it reaches buyers.
 
 This is also why a broken or visually distant product does not stay highly
-graded. The C2C scorecard clamps functional and cosmetic scores when damage
-evidence, weak product confidence, or low order-photo similarity is detected,
-producing a low grade and a steep discount.
+graded. The C2C policy clamps the preliminary grade when damage evidence, weak
+product confidence, colour mismatch, or low order-photo similarity is detected,
+producing a lower value and requiring pickup verification.
 
 The matching logic intentionally ignores broad labels such as `Electronics` or
 `Device` for identity. A generic electronics label is not enough proof that the

@@ -45,6 +45,21 @@ const weakIdentityTerms = new Set([
   "white",
   "wireless",
 ]);
+const colorAliases = {
+  black: ["black", "graphite"],
+  blue: ["blue", "navy"],
+  brown: ["brown", "beige", "tan"],
+  gold: ["gold", "golden", "yellow"],
+  gray: ["gray", "grey", "space grey", "space gray", "graphite"],
+  green: ["green"],
+  orange: ["orange"],
+  pink: ["pink", "rose"],
+  purple: ["purple", "violet"],
+  red: ["red"],
+  silver: ["silver", "white", "starlight", "gray", "grey"],
+  white: ["white", "silver", "starlight"],
+  yellow: ["yellow", "gold"],
+};
 
 let rekognitionClient;
 let s3Client;
@@ -231,7 +246,98 @@ function splitLabelsByExpectedItem(labels, returnCase) {
   };
 }
 
-function buildSignals(labels, returnCase) {
+function colorFamilyFromText(value = "") {
+  const text = String(value).toLowerCase();
+  return Object.entries(colorAliases).find(([, aliases]) =>
+    aliases.some((alias) => textContainsTerm(text, alias)),
+  )?.[0];
+}
+
+function normalizeDominantColors(imageProperties = {}) {
+  const colorSources = [
+    ...(imageProperties.DominantColors ?? []),
+    ...(imageProperties.Foreground?.DominantColors ?? []),
+    ...(imageProperties.Background?.DominantColors ?? []),
+  ];
+  const byFamily = new Map();
+
+  colorSources.forEach((color) => {
+    const name = color.SimplifiedColor ?? color.CSSColor ?? color.HexCode ?? "";
+    const family = colorFamilyFromText(name);
+    if (!family) return;
+
+    const pixelPercent = Number(color.PixelPercent ?? 0);
+    const current = byFamily.get(family);
+    if (!current || pixelPercent > current.pixelPercent) {
+      byFamily.set(family, {
+        family,
+        name,
+        hex: color.HexCode,
+        pixelPercent: Number(pixelPercent.toFixed(1)),
+      });
+    }
+  });
+
+  return [...byFamily.values()].sort((a, b) => b.pixelPercent - a.pixelPercent);
+}
+
+function expectedColorFamilies(returnCase) {
+  const colorText = [
+    returnCase.item.title,
+    returnCase.item.brandLine,
+    returnCase.item.variant,
+    returnCase.item.sku,
+  ].join(" ");
+  const families = new Set();
+
+  Object.keys(colorAliases).forEach((family) => {
+    if (colorAliases[family].some((alias) => textContainsTerm(colorText, alias))) {
+      families.add(family);
+    }
+  });
+
+  return [...families];
+}
+
+function compareColorEvidence({ returnCase, uploadedColors = [], referenceColors = [] }) {
+  const expectedFamilies = expectedColorFamilies(returnCase);
+  const uploadedFamilies = new Set(uploadedColors.map((color) => color.family));
+  const referenceFamilies = new Set(referenceColors.map((color) => color.family));
+  const expectedMatches = expectedFamilies.filter((family) => uploadedFamilies.has(family));
+  const referenceOverlap = [...referenceFamilies].filter((family) => uploadedFamilies.has(family));
+  const strongUploadedColor = uploadedColors.find((color) => color.pixelPercent >= 12);
+  const strongReferenceColor = referenceColors.find((color) => color.pixelPercent >= 12);
+  const hasExpectedColor = expectedFamilies.length > 0;
+  const expectedColorMismatch =
+    hasExpectedColor && uploadedColors.length > 0 && expectedMatches.length === 0;
+  const referenceColorMismatch =
+    strongUploadedColor &&
+    strongReferenceColor &&
+    referenceColors.length > 0 &&
+    referenceOverlap.length === 0;
+
+  let status = "unknown";
+  if (expectedColorMismatch || referenceColorMismatch) {
+    status = "mismatch";
+  } else if (expectedMatches.length || referenceOverlap.length) {
+    status = "matched";
+  }
+
+  return {
+    status,
+    expectedFamilies,
+    uploadedFamilies: [...uploadedFamilies],
+    referenceFamilies: [...referenceFamilies],
+    expectedMatches,
+    referenceOverlap,
+    expectedColorMismatch,
+    referenceColorMismatch,
+    uploadedColors,
+    referenceColors,
+  };
+}
+
+function buildSignals(labels, returnCase, colorComparison) {
   const labelNames = labels.map((label) => labelText(label));
   const expectedTerms = categoryTerms[returnCase.item.category] ?? [returnCase.item.category];
   const hasExpectedProduct = labelNames.some((label) =>
@@ -239,11 +345,8 @@ function buildSignals(labels, returnCase) {
       label.includes(term),
     ),
   );
-  const hasAccessory = labelNames.some((label) =>
-    ["cable", "case", "bag", "accessory", "charger"].some((term) => label.includes(term)),
-  );
-  const hasPackageOrTable = labelNames.some((label) =>
-    ["box", "package", "desk", "table"].some((term) => label.includes(term)),
+  const hasSupportContext = labelNames.some((label) =>
+    ["cable", "case", "bag", "charger", "box", "desk", "table"].some((term) => label.includes(term)),
   );
 
   const signals = [];
@@ -252,11 +355,11 @@ function buildSignals(labels, returnCase) {
       `Visual identity check matched the expected ${returnCase.item.category} item`,
     );
   }
-  if (hasAccessory) {
-    signals.push("Visual evidence includes accessory-like objects");
+  if (hasSupportContext) {
+    signals.push("Visual evidence includes supporting scene context, but it is not used as a standalone grade");
   }
-  if (hasPackageOrTable) {
-    signals.push("Visual evidence includes packaging or inspection surface context");
+  if (colorComparison?.status === "mismatch") {
+    signals.push("Uploaded color does not match the selected order variant");
   }
   if (!signals.length && labels.length) {
     signals.push(
@@ -281,23 +384,52 @@ function topConfidence(labels) {
 }
 
 async function detectLabelsFromBytes(bytes) {
-  const response = await getRekognitionClient().send(
-    new DetectLabelsCommand({
-      Image: {
-        Bytes: bytes,
-      },
-      MaxLabels: 20,
-      MinConfidence: 50,
-    }),
-  );
+  const evidence = await detectImageEvidenceFromBytes(bytes);
+  return evidence.labels;
+}
 
-  return (
-    response.Labels?.map((label) => ({
-      name: label.Name,
-      confidence: Number((label.Confidence ?? 0).toFixed(1)),
-      parents: label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [],
-    })) ?? []
-  );
+async function detectImageEvidenceFromBytes(bytes) {
+  let response;
+  try {
+    response = await getRekognitionClient().send(
+      new DetectLabelsCommand({
+        Image: {
+          Bytes: bytes,
+        },
+        MaxLabels: 20,
+        MinConfidence: 50,
+        Features: ["GENERAL_LABELS", "IMAGE_PROPERTIES"],
+        Settings: {
+          ImageProperties: {
+            MaxDominantColors: 8,
+          },
+        },
+      }),
+    );
+  } catch (error) {
+    response = await getRekognitionClient().send(
+      new DetectLabelsCommand({
+        Image: {
+          Bytes: bytes,
+        },
+        MaxLabels: 20,
+        MinConfidence: 50,
+      }),
+    );
+  }
+
+  return {
+    labels:
+      response.Labels?.map((label) => ({
+        name: label.Name,
+        confidence: Number((label.Confidence ?? 0).toFixed(1)),
+        parents: label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [],
+      })) ?? [],
+    imageProperties: {
+      dominantColors: normalizeDominantColors(response.ImageProperties),
+      quality: response.ImageProperties?.Quality,
+    },
+  };
 }
 
 async function detectReferenceImageLabels(returnCase) {
@@ -322,9 +454,11 @@ async function detectReferenceImageLabels(returnCase) {
       throw new Error("Reference image is empty or too large for comparison.");
     }
 
+    const evidence = await detectImageEvidenceFromBytes(bytes);
     return {
       compared: true,
-      labels: await detectLabelsFromBytes(bytes),
+      labels: evidence.labels,
+      imageProperties: evidence.imageProperties,
       imageUrl,
     };
   } catch (error) {
@@ -414,11 +548,17 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
   }
 
   try {
-    const rawLabels = await detectLabelsFromBytes(decoded.bytes);
+    const uploadEvidence = await detectImageEvidenceFromBytes(decoded.bytes);
+    const rawLabels = uploadEvidence.labels;
     const reference = await detectReferenceImageLabels(returnCase);
     const referenceComparison = compareUploadedToReference({
       uploadedLabels: rawLabels,
       referenceLabels: reference.labels,
+    });
+    const colorComparison = compareColorEvidence({
+      returnCase,
+      uploadedColors: uploadEvidence.imageProperties?.dominantColors,
+      referenceColors: reference.imageProperties?.dominantColors,
     });
     const { relevant, ignored, identityStatus, comparison } = splitLabelsByExpectedItem(
       rawLabels,
@@ -430,7 +570,11 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
       topIgnoredConfidence >= 80 && topIgnoredConfidence - topRelevantConfidence >= 18;
     const weakProductEvidence =
       identityStatus === "matched" && topRelevantConfidence > 0 && topRelevantConfidence < 72;
-    const inspectionSignals = buildSignals(relevant.length ? relevant : rawLabels, returnCase);
+    const inspectionSignals = buildSignals(
+      relevant.length ? relevant : rawLabels,
+      returnCase,
+      colorComparison,
+    );
 
     return {
       aiAnalysis: {
@@ -448,6 +592,8 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
           topIgnoredConfidence,
           dominantUnrelatedEvidence,
           weakProductEvidence,
+          colorComparison,
+          colorMismatch: colorComparison.status === "mismatch",
           method: referenceComparison.compared
             ? "rekognition-upload-vs-order-photo-and-metadata"
             : comparison.method,
@@ -461,6 +607,7 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
         labels: relevant,
         ignoredLabels: ignored,
         rawLabels,
+        imageProperties: uploadEvidence.imageProperties,
         inspectionSignals,
         summary: summarizeRelevantLabels({
           relevant,
@@ -469,7 +616,7 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
           returnCase,
         }),
         limitation:
-          "Rekognition checks visual identity evidence. The final A/B/C grade comes from functional, cosmetic, accessory, hygiene, packaging, fraud-risk, and demand signals.",
+          "Rekognition checks visual identity, dominant color, and scene evidence. The final customer-facing grade is preliminary until pickup review.",
       },
       media,
     };

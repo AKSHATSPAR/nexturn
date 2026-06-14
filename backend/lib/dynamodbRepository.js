@@ -218,6 +218,59 @@ export async function saveC2CListing(listing) {
   return { mode: "dynamodb", persisted: true, tableName };
 }
 
+export async function getCustomerProfile(customerId) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false, profile: null };
+  }
+
+  const { GetCommand } = await import("@aws-sdk/lib-dynamodb");
+  const response = await client.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        pk: `CUSTOMER#${customerId}`,
+        sk: "PROFILE",
+      },
+    }),
+  );
+
+  return {
+    mode: "dynamodb",
+    persisted: Boolean(response.Item),
+    tableName,
+    profile: response.Item ?? null,
+  };
+}
+
+export async function saveCustomerProfile(identity, profile) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false };
+  }
+
+  const { PutCommand } = await import("@aws-sdk/lib-dynamodb");
+  const now = new Date().toISOString();
+
+  await client.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        pk: `CUSTOMER#${identity.customerId}`,
+        sk: "PROFILE",
+        entityType: "CustomerProfile",
+        customerId: identity.customerId,
+        email: identity.email,
+        name: identity.name,
+        address: profile.address,
+        updatedAt: now,
+      },
+    }),
+  );
+
+  return { mode: "dynamodb", persisted: true, tableName };
+}
+
 export async function listC2CListings() {
   const client = await getDocumentClient();
   if (!client) {
@@ -244,6 +297,76 @@ export async function listC2CListings() {
     tableName,
     listings: response.Items ?? [],
   };
+}
+
+export async function saveC2CInterest(listing, interest) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false };
+  }
+
+  const { TransactWriteCommand } = await import("@aws-sdk/lib-dynamodb");
+  const now = new Date().toISOString();
+  const interestCount = Number(listing.interestCount ?? 0) + 1;
+  const transactItems = [
+    {
+      Put: {
+        TableName: tableName,
+        Item: {
+          ...interest,
+          pk: `LISTING#${listing.id}`,
+          sk: `INTEREST#${interest.id}`,
+          entityType: "C2CBuyerInterest",
+          customerId: interest.buyerId,
+          marketplaceStatus: "INTEREST#QUEUED",
+          routeStatus: "interest#QUEUED_FOR_PICKUP_REVIEW",
+          updatedAt: now,
+        },
+      },
+    },
+    {
+      Put: {
+        TableName: tableName,
+        Item: {
+          pk: `CUSTOMER#${interest.buyerId}`,
+          sk: `INTEREST#${interest.id}`,
+          entityType: "C2CInterestLink",
+          customerId: interest.buyerId,
+          listingId: listing.id,
+          itemTitle: interest.itemTitle,
+          sellerId: interest.sellerId,
+          status: interest.status,
+          paymentStatus: interest.paymentStatus,
+          updatedAt: now,
+        },
+      },
+    },
+  ];
+
+  if (!listing.id.startsWith("seed_")) {
+    transactItems.push({
+      Update: {
+        TableName: tableName,
+        Key: {
+          pk: `LISTING#${listing.id}`,
+          sk: "PROFILE",
+        },
+        UpdateExpression: "SET interestCount = :count, updatedAt = :now",
+        ExpressionAttributeValues: {
+          ":count": interestCount,
+          ":now": now,
+        },
+      },
+    });
+  }
+
+  await client.send(
+    new TransactWriteCommand({
+      TransactItems: transactItems,
+    }),
+  );
+
+  return { mode: "dynamodb", persisted: true, tableName };
 }
 
 export async function getC2CListing(listingId) {

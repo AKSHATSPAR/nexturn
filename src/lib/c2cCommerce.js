@@ -149,6 +149,36 @@ export function calculateDeliveryFee({
   };
 }
 
+export function normalizeCustomerProfile(profile = {}) {
+  const address = profile.address ?? profile;
+  const serviceLocation = normalizeIndiaLocation(address);
+  const addressLine = String(address.addressLine ?? address.line1 ?? "").trim();
+  const pincode = String(address.pincode ?? address.postalCode ?? "").trim();
+
+  if (!serviceLocation || !addressLine || !pincode) {
+    return {
+      complete: false,
+      address: null,
+      message: "Add an India delivery address before buying or selling.",
+    };
+  }
+
+  return {
+    complete: true,
+    address: {
+      addressLine,
+      city: serviceLocation.city,
+      state: serviceLocation.state,
+      country: "IN",
+      pincode,
+      lat: serviceLocation.lat,
+      lon: serviceLocation.lon,
+      zone: serviceLocation.zone,
+    },
+    message: "Profile address ready.",
+  };
+}
+
 export function ordersForCustomer(identity = {}) {
   const customerId = identity.customerId ?? "demo_customer";
 
@@ -221,6 +251,10 @@ export function detectDamageFlags({ aiAnalysis, fileName = "" }) {
     detectedFlags.push("visual_condition_risk");
   }
 
+  if (comparison.colorMismatch || comparison.colorComparison?.status === "mismatch") {
+    detectedFlags.push("color_mismatch");
+  }
+
   return [...new Set(detectedFlags)];
 }
 
@@ -240,6 +274,7 @@ export function buildConditionScorecard({
   const hasSevereDamage = damageFlags.includes("severe_visual_damage");
   const hasVisualDamage = damageFlags.includes("visual_damage_detected");
   const hasVisualConditionRisk = damageFlags.includes("visual_condition_risk");
+  const hasColorMismatch = damageFlags.includes("color_mismatch");
   const comparison = aiAnalysis?.identityComparison ?? {};
   const topRelevantConfidence = Number(comparison.topRelevantConfidence ?? 0);
 
@@ -265,6 +300,11 @@ export function buildConditionScorecard({
     accessoryCompleteness = Math.min(accessoryCompleteness, 72);
   }
 
+  if (hasColorMismatch) {
+    cosmeticScore = Math.min(cosmeticScore, 62);
+    packagingScore = Math.min(packagingScore, 70);
+  }
+
   if (hasBrokenScreen || hasSevereDamage) {
     functionalScore = Math.min(functionalScore, 58);
     cosmeticScore = Math.min(cosmeticScore, 28);
@@ -284,6 +324,13 @@ export function buildConditionScorecard({
     accessoryCompleteness,
     identityScore,
     damageFlags,
+    reviewSignals: {
+      productMatchScore: identityScore,
+      colorStatus: comparison.colorComparison?.status ?? "unknown",
+      colorMismatch: hasColorMismatch,
+      referenceSimilarity: Number(comparison.referenceSimilarity ?? 0),
+      manualPickupReviewRequired: true,
+    },
     aiProvider: aiAnalysis?.provider ?? "rules-engine",
     aiMode: aiAnalysis?.mode ?? "no-upload",
   };
@@ -299,6 +346,7 @@ export function gradeScorecard(scorecard) {
   const hasBrokenScreen = scorecard.damageFlags.includes("broken_screen");
   const hasSevereDamage = scorecard.damageFlags.includes("severe_visual_damage");
   const hasVisualConditionRisk = scorecard.damageFlags.includes("visual_condition_risk");
+  const hasColorMismatch = scorecard.damageFlags.includes("color_mismatch");
   const identityMismatch = scorecard.identityScore < 50;
   const score = Math.round(rawScore);
 
@@ -323,13 +371,24 @@ export function gradeScorecard(scorecard) {
     };
   }
 
+  if (hasColorMismatch) {
+    return {
+      grade: "B",
+      label: "Variant review needed",
+      score: Math.min(score, 76),
+      confidence: "Manual pickup review",
+      summary:
+        "The product type matches, but the uploaded color or variant differs from the order proof. Final price waits for pickup review.",
+    };
+  }
+
   if (score >= 92) {
     return {
       grade: "A",
       label: "Like new",
       score,
-      confidence: "High confidence",
-      summary: "Near-pristine condition with complete accessories.",
+      confidence: "Preliminary high confidence",
+      summary: "Preliminary visual match is strong. Final payout still depends on pickup review.",
     };
   }
 
@@ -338,8 +397,8 @@ export function gradeScorecard(scorecard) {
       grade: "A-",
       label: "Excellent",
       score,
-      confidence: "High confidence",
-      summary: "Minimal wear and strong functional evidence.",
+      confidence: "Preliminary high confidence",
+      summary: "Preliminary visual match is strong. Final payout still depends on pickup review.",
     };
   }
 
@@ -348,8 +407,8 @@ export function gradeScorecard(scorecard) {
       grade: "B+",
       label: "Very good",
       score,
-      confidence: "High confidence",
-      summary: "Light visible wear with core functions intact.",
+      confidence: "Preliminary confidence",
+      summary: "Preliminary visual review passed. Final payout waits for pickup review.",
     };
   }
 
@@ -420,7 +479,7 @@ export function createListingFromEvaluation({
   const now = new Date().toISOString();
   const listingId = `nt_${order.id.replace(/[^0-9]/g, "")}_${Date.now().toString(36)}`;
   const sellerLocation =
-    normalizeIndiaLocation(identity.location) ??
+    normalizeIndiaLocation(identity.address ?? identity.location) ??
     fallbackSellerLocations[Math.abs((identity.customerId ?? listingId).length) % fallbackSellerLocations.length] ??
     defaultBuyerLocation;
   const delivery = calculateDeliveryFee({
@@ -447,6 +506,18 @@ export function createListingFromEvaluation({
     uploadedImagePreview,
     grade,
     scorecard,
+    review: {
+      status: "preliminary_ai_review",
+      paymentUnlocked: false,
+      manualPickupReviewRequired: true,
+      paymentNote:
+        "Buyers can join the queue now. Payment unlocks only after an Amazon delivery partner verifies the item during pickup.",
+      finalPriceNote:
+        "The displayed resale value is preliminary and can change after manual pickup review.",
+      productMatchScore: scorecard.reviewSignals.productMatchScore,
+      colorStatus: scorecard.reviewSignals.colorStatus,
+      referenceSimilarity: scorecard.reviewSignals.referenceSimilarity,
+    },
     aiAnalysis,
     media,
     price: pricing.price,
@@ -459,12 +530,51 @@ export function createListingFromEvaluation({
       ? null
       : "The uploaded photo appears to be a different product than the selected Amazon order item.",
     logistics:
-      "No warehouse involved. Seller keeps the item at home until a buyer pays; Amazon delivery partner checks quality at pickup and delivers to the buyer.",
+      "No warehouse involved. Seller keeps the item at home. Buyers can join the queue; payment opens only after an Amazon delivery partner checks quality at pickup.",
     settlement: {
-      itemPaymentToSeller: pricing.price,
+      preliminaryItemValue: pricing.price,
       deliveryFeeToAmazon: delivery.allowed ? delivery.fee : pricing.deliveryFee,
       buyerTotal: Number((pricing.price + (delivery.allowed ? delivery.fee : pricing.deliveryFee)).toFixed(2)),
+      paymentStatus: "locked_until_pickup_review",
     },
+  };
+}
+
+export function createInterestQueueEntry({
+  buyerIdentity = {},
+  buyerProfile = {},
+  listing,
+}) {
+  const queuedAt = new Date().toISOString();
+  const profile = normalizeCustomerProfile(buyerProfile);
+  const delivery = calculateDeliveryFee({
+    buyerLocation: profile.address,
+    sellerLocation: listing.sellerLocation,
+    weightKg: listing.item?.estimatedWeightKg,
+  });
+  const deliveryFee = Number(delivery.allowed ? delivery.fee : listing.deliveryFee ?? DEFAULT_DELIVERY_FEE_INR);
+  const preliminaryItemValue = Number(listing.price ?? 0);
+
+  return {
+    id: `interest_${listing.id}_${Date.now().toString(36)}`,
+    listingId: listing.id,
+    queuedAt,
+    status: "queued_for_pickup_review",
+    paymentStatus: "locked_until_pickup_review",
+    buyerId: buyerIdentity.customerId,
+    buyerEmail: buyerIdentity.email,
+    buyerName: buyerIdentity.name,
+    buyerAddress: profile.address,
+    sellerId: listing.sellerId,
+    sellerName: listing.sellerName,
+    sellerLocation: listing.sellerLocation,
+    itemTitle: listing.item?.title ?? listing.title,
+    preliminaryItemValue,
+    estimatedDeliveryFee: deliveryFee,
+    estimatedTotalAfterReview: Number((preliminaryItemValue + deliveryFee).toFixed(2)),
+    deliveryEstimate: delivery,
+    paymentUnlockRule:
+      "Payment opens only after the pickup partner manually verifies item identity, color/variant, and visible condition.",
   };
 }
 
@@ -501,6 +611,8 @@ export function createCheckoutReceipt({ buyerIdentity = {}, buyerLocation = defa
 }
 
 export function normalizeMarketplaceListing(listing = {}) {
+  if (!listing) return {};
+
   const proofOrder =
     orderProofHistory.find((order) => order.id === listing.item?.id || order.asin === listing.item?.asin) ??
     orderProofHistory.find((order) => order.title === listing.item?.title) ??
@@ -547,11 +659,27 @@ export function normalizeMarketplaceListing(listing = {}) {
       (item?.originalPrice ? Math.round((1 - price / Number(item.originalPrice)) * 100) : 0),
     deliveryFee,
     deliveryEstimate: listing.deliveryEstimate ?? delivery,
+    logistics:
+      listing.logistics && !/after purchase/i.test(listing.logistics)
+        ? listing.logistics
+        : "Seller keeps the item at home. Buyers join the queue; payment opens only after pickup verification.",
+    review: listing.review ?? {
+      status: "preliminary_ai_review",
+      paymentUnlocked: false,
+      manualPickupReviewRequired: true,
+      paymentNote:
+        "Buyers can join the queue now. Payment unlocks only after pickup verification.",
+      finalPriceNote: "Displayed resale value is preliminary.",
+      productMatchScore: listing.scorecard?.reviewSignals?.productMatchScore ?? listing.scorecard?.identityScore ?? 0,
+      colorStatus: listing.scorecard?.reviewSignals?.colorStatus ?? "unknown",
+      referenceSimilarity: listing.scorecard?.reviewSignals?.referenceSimilarity ?? 0,
+    },
     settlement: {
       ...(listing.settlement ?? {}),
-      itemPaymentToSeller: price,
+      preliminaryItemValue: price,
       deliveryFeeToAmazon: deliveryFee,
       buyerTotal: Number((price + deliveryFee).toFixed(2)),
+      paymentStatus: listing.settlement?.paymentStatus ?? "locked_until_pickup_review",
     },
   };
 }

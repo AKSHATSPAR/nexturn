@@ -251,6 +251,12 @@ class NexTurnStack extends Stack {
       authorizer: customerAuthorizer,
     });
     httpApi.addRoutes({
+      path: "/c2c/profile",
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
       path: "/c2c/listings/evaluate",
       methods: [HttpMethod.POST],
       integration,
@@ -258,6 +264,12 @@ class NexTurnStack extends Stack {
     });
     httpApi.addRoutes({
       path: "/c2c/listings",
+      methods: [HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/c2c/interest",
       methods: [HttpMethod.POST],
       integration,
       authorizer: customerAuthorizer,

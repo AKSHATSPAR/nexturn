@@ -8,18 +8,17 @@ the app gives the customer a transparent, value-aware, sustainable choice.
 
 ## Flow
 
-1. Open the connected return case for the headphones.
-2. Point out the scan evidence: uploaded media, inspection progress, defects,
-   accessories, and the A- quality grade.
-3. Explain that the recommendation is not generic resale. It weighs condition,
-   demand, payout, convenience, fraud risk, sustainability, and customer value.
-4. Select a different route such as donation or exchange, then show the Trust
-   Passport and green-credit bar update immediately.
-5. Return to the recommended resell route and show buyer matches. The next buyer
-   receives trust signals instead of guessing condition from a listing.
-6. Show the Purchase fit check. This is the prevention layer: NexTurn recommends
-   lower-risk refurbished alternatives before the next purchase creates another
-   return.
+1. Sign in and save an India delivery address in Profile.
+2. Open Sell / Return Items and choose a product from Amazon order proof history.
+3. Upload a current item photo and point out that AWS Rekognition compares the
+   upload against order metadata, original image evidence, colour/variant, and
+   damage risk.
+4. Publish the listing and explain the core C2C rule: no warehouse, the seller
+   keeps the item at home.
+5. Open Marketplace from another signed-in account, inspect the original purchase
+   date, seller location, preliminary value, and delivery estimate.
+6. Join the buyer queue. No payment is collected until an Amazon delivery
+   partner manually verifies the item at pickup.
 
 ## Judge-Facing Highlights
 
@@ -29,7 +28,8 @@ the app gives the customer a transparent, value-aware, sustainable choice.
   Lambda-compatible API, DynamoDB adapter, CDK stack, CI, and tests.
 - AWS usage: Lambda, HTTP API, DynamoDB, S3-ready build, CloudWatch logs, and
   CDK in `us-east-1`.
-- Unique angle: return resolution and return prevention in one customer journey.
+- Unique angle: order-proof-backed C2C resale with no warehouse hold and
+  payment locked until pickup verification.
 - Free Tier posture: no always-on servers, on-demand DynamoDB, small Lambda, and
   destroyable infrastructure.
 

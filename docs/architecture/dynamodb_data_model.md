@@ -23,15 +23,17 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | `RETURN#ret_8821_7710_55` | `MATCH#buyer_rahul` | `BuyerMatch` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
 | `CUSTOMER#cust_aarav` | `CREDIT#2026-06-13T18:15:00Z#evt_1` | `GreenCreditLedger` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
 | `CUSTOMER#cust_aarav` | `FIT#alt_qc` | `PurchaseFitRecommendation` | `cust_aarav` |  | `2026-06-13T18:15:00Z` |
+| `CUSTOMER#cust_aarav` | `PROFILE` | `CustomerProfile` | `cust_aarav` |  | `2026-06-14T11:00:00Z` |
+| `LISTING#nt_112741...` | `INTEREST#interest_1` | `C2CBuyerInterest` | `cust_buyer` |  | `2026-06-14T11:08:00Z` |
 
 - **Purpose**: stores return resolution aggregates and green-credit ledger
   entries.
 - **Partition Key**: `pk`, a composite string because base tables do not support
   multi-attribute keys.
 - **Sort Key**: `sk`, a typed prefix key for bounded range queries.
-- **SK Taxonomy**: `META`, `SCAN#<version>`, `ROUTE#<routeId>`,
+- **SK Taxonomy**: `META`, `PROFILE`, `SCAN#<version>`, `ROUTE#<routeId>`,
   `PASSPORT#<passportId>`, `MATCH#<buyerId>`, `CREDIT#<createdAt>#<eventId>`,
-  `FIT#<alternativeId>`.
+  `FIT#<alternativeId>`, `INTEREST#<interestId>`.
 - **Capacity**: on-demand billing for the prototype; no provisioned capacity to
   tune during the hackathon.
 
@@ -75,8 +77,10 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 - **Partition Key**: `marketplaceStatus`.
 - **Sort Key**: `updatedAt`.
 - **Projection**: all attributes, because listing cards and detail drawers need
-  grade, scorecard, proof metadata, seller, price, and logistics text.
-- **Sparse**: only C2C listing and checkout records include marketplace status.
+  grade, AI review, proof metadata, seller, price, queue count, and logistics
+  text.
+- **Sparse**: only C2C listing and buyer-interest records include marketplace
+  status.
 
 ## Access Pattern Mapping
 
@@ -93,8 +97,9 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | AP9 | List low-return purchase alternatives | Query | 10 | 6 | 1 KB | NexTurnTable | `Query(pk = CUSTOMER#id, begins_with(sk, FIT#))` | Supports predictive return prevention |
 | AP10 | List active C2C marketplace listings | Query | 30 | 50 | 3 KB | MarketplaceIndex | `Query(marketplaceStatus = LISTING#ACTIVE)` | Hero listings above public API feed |
 | AP11 | Create C2C listing | PutItem | 8 | - | 4 KB | NexTurnTable | `PutItem(pk = LISTING#id, sk = PROFILE)` | Seller keeps item at home |
-| AP12 | Simulate C2C checkout | TransactWrite | 8 | - | 2 KB | NexTurnTable | `Put receipt + update listing sold` | Buyer payment split and pickup scheduled |
-| AP13 | Get listing detail | GetItem | 25 | 1 | 4 KB | NexTurnTable | `GetItem(pk = LISTING#id, sk = PROFILE)` | Proof, scorecard, price, logistics |
+| AP12 | Join C2C buyer queue | TransactWrite | 8 | - | 2 KB | NexTurnTable | `Put interest + update listing queue count` | Payment locked until pickup review |
+| AP13 | Get listing detail | GetItem | 25 | 1 | 4 KB | NexTurnTable | `GetItem(pk = LISTING#id, sk = PROFILE)` | Proof, AI review, price, purchase date, logistics |
+| AP14 | Save buyer/seller profile | PutItem | 8 | - | 1 KB | NexTurnTable | `PutItem(pk = CUSTOMER#id, sk = PROFILE)` | Required India address before buy/sell |
 
 ## Hot Partition Analysis
 

@@ -28,14 +28,16 @@ import {
 } from "lucide-react";
 import { initializeAuth, signIn, signOut } from "./services/auth";
 import {
-  checkoutC2CListing,
   createC2CListing,
   evaluateC2CListingUpload,
   fetchC2CMarketplace,
   fetchC2COrders,
+  fetchC2CProfile,
+  joinC2CInterestQueue,
+  saveC2CProfile,
 } from "./services/returnResolutionApi";
 import { defaultBuyerLocation, indianServiceLocations } from "./data/c2cCommerce";
-import { calculateDeliveryFee, formatMarketplaceCurrency } from "./lib/c2cCommerce";
+import { calculateDeliveryFee, formatMarketplaceCurrency, normalizeCustomerProfile } from "./lib/c2cCommerce";
 
 const navItems = [
   { id: "home", label: "Overview", Icon: Home },
@@ -106,7 +108,7 @@ function TopCommandBar({
         <MapPin size={15} />
         {location.city}, {location.state}
       </span>
-      <button type="button" aria-label="Open cart" onClick={onCartOpen}>
+      <button type="button" aria-label="Open saved items" onClick={onCartOpen}>
         <ShoppingCart size={17} />
         <span>{cartCount}</span>
       </button>
@@ -174,7 +176,7 @@ function Sidebar({
           <strong>
             <PackageCheck size={22} /> No warehouse
           </strong>
-          <small>Seller keeps item at home until buyer checkout.</small>
+          <small>Seller keeps item at home until pickup review.</small>
         </section>
         <section className="credit-card service-card">
           <span>Delivery location</span>
@@ -225,6 +227,23 @@ function SignInGate({ title, detail }) {
   );
 }
 
+function ProfileGate({ onOpenSettings }) {
+  return (
+    <section className="panel sign-in-gate profile-gate">
+      <MapPin size={24} />
+      <h2>Complete your address first</h2>
+      <p>
+        NexTurn needs a saved India address before you can sell or join a buyer
+        queue. Delivery fee estimates use the seller and buyer addresses, not
+        live location.
+      </p>
+      <button className="primary-action" type="button" onClick={onOpenSettings}>
+        <Settings size={17} /> Open profile
+      </button>
+    </section>
+  );
+}
+
 function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
   const activeHeroCount = marketplace.heroListings.length;
 
@@ -268,7 +287,7 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
           <ShoppingBag size={24} />
           <span>
             <strong>Buy AI-graded second-life items</strong>
-            <small>See proof, scorecard, seller-at-home logistics, and checkout split.</small>
+            <small>See proof, preliminary AI review, seller location, and queue rules.</small>
           </span>
           <ChevronRight size={18} />
         </button>
@@ -316,10 +335,13 @@ function AiEvidenceSummary({ aiAnalysis }) {
   const referenceCompared = Boolean(comparison.referenceImageCompared);
   const productMatch = Math.round(comparison.topRelevantConfidence ?? 0);
   const photoSimilarity = Math.round(comparison.referenceSimilarity ?? 0);
+  const colorStatus = comparison.colorComparison?.status ?? "unknown";
   const risk =
     aiAnalysis?.identityStatus === "mismatch"
       ? "Wrong item"
-      : comparison.weakProductEvidence || comparison.dominantUnrelatedEvidence
+      : comparison.colorMismatch
+        ? "Variant review"
+        : comparison.weakProductEvidence || comparison.dominantUnrelatedEvidence
         ? "Condition risk"
         : "Clear match";
 
@@ -332,6 +354,10 @@ function AiEvidenceSummary({ aiAnalysis }) {
       <span>
         <small>Order-photo compare</small>
         <strong>{referenceCompared ? `${photoSimilarity}%` : "Metadata"}</strong>
+      </span>
+      <span>
+        <small>Colour / variant</small>
+        <strong>{colorStatus === "matched" ? "Matched" : colorStatus === "mismatch" ? "Review" : "Unknown"}</strong>
       </span>
       <span>
         <small>AI decision</small>
@@ -349,7 +375,7 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
         <h2>AI grade appears here after upload</h2>
         <p>
           Upload the real item photo. AWS Rekognition checks identity evidence and
-          NexTurn's deterministic scorecard calculates the resale grade and price.
+          NexTurn calculates a preliminary grade and value before pickup review.
         </p>
       </section>
     );
@@ -362,7 +388,7 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
     <section className={`panel evaluation-panel ${isBlocked ? "blocked" : ""}`}>
       <div className="evaluation-heading">
         <div>
-          <span>{isBlocked ? "Product identity mismatch" : "AI grading complete"}</span>
+          <span>{isBlocked ? "Product identity mismatch" : "Preliminary AI review"}</span>
           <strong>{listing.grade.grade}</strong>
           <small>{listing.grade.summary}</small>
         </div>
@@ -379,28 +405,17 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
       <AiEvidenceSummary aiAnalysis={evaluation.aiAnalysis} />
       {evaluation.aiAnalysis?.summary && <p className="ai-summary-note">{evaluation.aiAnalysis.summary}</p>}
       <div className="price-split">
-        <span>{isBlocked ? "Listing status" : "Auto discounted price"}</span>
+        <span>{isBlocked ? "Listing status" : "Preliminary resale value"}</span>
         <strong>{isBlocked ? "Blocked" : formatMarketplaceCurrency(listing.price)}</strong>
         <small>
           {isBlocked
             ? "Wrong-product uploads are stopped before marketplace publishing."
-            : `${listing.discountPercent}% below original ${formatMarketplaceCurrency(listing.item.originalPrice)}`}
+            : "Final payable value opens only after manual pickup review."}
         </small>
       </div>
-      <div className="scorecard-grid">
-        <ScoreBar label="Functional" value={listing.scorecard.functionalScore} />
-        <ScoreBar label="Cosmetic" value={listing.scorecard.cosmeticScore} />
-        <ScoreBar label="Packaging" value={listing.scorecard.packagingScore} />
-        <ScoreBar label="Accessories" value={listing.scorecard.accessoryCompleteness} />
-      </div>
-      {listing.scorecard.damageFlags.length > 0 && (
-        <p className="damage-note">
-          Damage flags: {listing.scorecard.damageFlags.join(", ")}
-        </p>
-      )}
       <p className="seller-hold-note">
-        You keep the item at your house. Once a buyer pays, an Amazon delivery partner
-        checks quality at pickup and delivers it to the buyer.
+        This AI grade is preliminary and can change. You keep the item at your
+        house; buyers join a queue, and payment unlocks only after pickup review.
       </p>
       <button
         className="primary-action"
@@ -437,9 +452,11 @@ function SellHubView({
   listingMessage,
   onEvaluate,
   onFileSelected,
+  onOpenProfile,
   onPublish,
   onSelectOrder,
   orders,
+  profileComplete,
   selectedOrder,
 }) {
   if (!isSignedIn) {
@@ -454,6 +471,19 @@ function SellHubView({
           title="Seller actions are locked"
           detail="A public visitor can browse the marketplace, but listing an item requires authentication."
         />
+      </main>
+    );
+  }
+
+  if (!profileComplete) {
+    return (
+      <main className="studio workspace-page c2c-workspace">
+        <PageHeader
+          eyebrow="Sell / Return items"
+          title="Address required before listing"
+          description="Seller pickup fees and buyer delivery estimates depend on the address saved in your NexTurn profile."
+        />
+        <ProfileGate onOpenSettings={onOpenProfile} />
       </main>
     );
   }
@@ -504,8 +534,8 @@ function SellHubView({
           )}
           <p className="condition-hint-copy">
             No manual condition labels are used. NexTurn compares the uploaded photo
-            against the order proof image and product metadata, then grades visual match
-            and damage risk automatically.
+            against the order proof image, product metadata, and colour/variant evidence.
+            The grade is preliminary until pickup review.
           </p>
           <label className="upload-dropzone">
             <input
@@ -559,6 +589,7 @@ function HeroListingCard({ listing, onAddToCart, onOpen }) {
         <small>
           Seller: {listing.sellerName} · {listing.sellerCity}, {listing.sellerState}
         </small>
+        <small>Purchased {listing.item.purchaseDate}</small>
       </div>
       <footer>
         <span>
@@ -566,7 +597,7 @@ function HeroListingCard({ listing, onAddToCart, onOpen }) {
           <em>{listing.category ?? listing.item.marketplaceCategory ?? "Electronics"}</em>
         </span>
         <button type="button" onClick={() => onAddToCart(listing)}>
-          <ShoppingCart size={15} /> Add
+          <ShoppingCart size={15} /> Save
         </button>
       </footer>
     </article>
@@ -659,7 +690,7 @@ function MarketplaceView({
       <PageHeader
         eyebrow="Buy / Marketplace"
         title="Second-life items with proof you can inspect"
-        description="AI-graded listings are injected above the public API product feed so judges can see the working C2C inventory."
+        description="Join the buyer queue for AI-reviewed listings. Actual payment unlocks only after pickup verification confirms item identity, colour, and condition."
         action={
           <div className="market-toolbar">
             <label className="market-search">
@@ -763,7 +794,7 @@ function MyListingsView({ listings, onAddToCart, onOpenListing }) {
       <PageHeader
         eyebrow="My listings"
         title="Items you are holding at home"
-        description="NexTurn only coordinates pickup after a buyer pays. Until then, the product remains with the seller."
+        description="NexTurn coordinates pickup after a buyer joins the queue and pickup verification is ready. Until then, the product remains with the seller."
       />
       {listings.length ? (
         <div className="hero-listing-grid compact">
@@ -787,61 +818,119 @@ function MyListingsView({ listings, onAddToCart, onOpenListing }) {
   );
 }
 
-function ImpactView() {
+function ImpactView({ marketplace, queueItems }) {
+  const verifiedListings = marketplace.heroListings.length;
+  const queuedCount = queueItems.length;
+  const estimatedWeightKg = marketplace.heroListings.reduce(
+    (sum, listing) => sum + Number(listing.item?.estimatedWeightKg ?? 0.4),
+    0,
+  );
+  const avoidedHandlingEvents = verifiedListings + queuedCount;
+  const estimatedEmissionsSaved = Math.max(0, Math.round(estimatedWeightKg * 18 + queuedCount * 1.5));
+
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Impact"
-        title="Why the direct C2C model matters"
-        description="Keeping items with sellers until purchase avoids warehouse hops, reduces unnecessary handling, and gives buyers transparent proof before checkout."
+        title="Impact updates from real marketplace events"
+        description="The impact tab is useful only if it reflects actions: listings created from order proof, buyers joining queues, pickup reviews, and warehouse hops avoided."
       />
       <div className="metric-grid">
         <MetricCard
           label="Warehouse hops"
           value="0"
-          detail="No centralized return warehouse in this flow"
+          detail={`${avoidedHandlingEvents} listing or queue events avoid a central return warehouse`}
           Icon={PackageCheck}
         />
         <MetricCard
-          label="Trust signal"
-          value="Order proof"
-          detail="Connected Amazon order metadata anchors authenticity"
+          label="Buyer queues"
+          value={queuedCount}
+          detail="Payment intent without charging before pickup review"
           Icon={ShieldCheck}
         />
         <MetricCard
-          label="Buyer confidence"
-          value="Scorecard"
-          detail="Functional, cosmetic, packaging, and accessory scores"
+          label="Estimated CO2e saved"
+          value={`${estimatedEmissionsSaved} kg`}
+          detail="Prototype estimate from item weight and avoided handling"
           Icon={BadgeCheck}
         />
       </div>
+      <section className="panel impact-explainer">
+        <h2>What changes these numbers?</h2>
+        <p>
+          A seller listing increases order-proof inventory. A buyer joining the
+          queue increases demand without collecting payment. Pickup verification
+          would unlock payment and confirm the final item value. In production,
+          these events would be written to a ledger and recalculated from actual
+          pickup, delivery, and resale outcomes.
+        </p>
+      </section>
     </main>
   );
 }
 
-function SettingsView({ buyerLocation, onBuyerLocationChange, theme, onThemeToggle }) {
+function SettingsView({
+  isSavingProfile,
+  onProfileChange,
+  onProfileSave,
+  onThemeToggle,
+  profileComplete,
+  profileDraft,
+  profileMessage,
+  theme,
+}) {
+  const selectedLocationValue = `${profileDraft.address?.city ?? defaultBuyerLocation.city}|${profileDraft.address?.state ?? defaultBuyerLocation.state}`;
+
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
-        eyebrow="Settings"
-        title="Prototype transparency"
-        description="This demo uses AWS Rekognition for image evidence, a deterministic scorecard for grade, DynamoDB for listings, India-only delivery rules, and a mock payment success state."
+        eyebrow="Profile"
+        title="Address unlocks buying and selling"
+        description="NexTurn uses saved buyer and seller addresses to estimate delivery fees. No live location is required, and India-only addresses are accepted in this prototype."
       />
       <section className="panel settings-panel c2c-settings">
         <div className="settings-row">
           <span>
-            <strong>Buyer delivery city</strong>
-            <small>Used to estimate Amazon-facilitated C2C pickup and delivery fee.</small>
+            <strong>Address line</strong>
+            <small>Required before listing or joining a buyer queue.</small>
+          </span>
+          <input
+            className="settings-input"
+            value={profileDraft.address?.addressLine ?? ""}
+            placeholder="Flat / house, street, area"
+            onChange={(event) =>
+              onProfileChange({
+                address: {
+                  ...(profileDraft.address ?? {}),
+                  addressLine: event.target.value,
+                },
+              })
+            }
+          />
+        </div>
+        <div className="settings-row">
+          <span>
+            <strong>City and state</strong>
+            <small>Used with seller address for route-based delivery fee.</small>
           </span>
           <select
             className="settings-select"
-            value={`${buyerLocation.city}|${buyerLocation.state}`}
+            value={selectedLocationValue}
             onChange={(event) => {
               const [city, state] = event.target.value.split("|");
               const next = indianServiceLocations.find(
                 (location) => location.city === city && location.state === state,
               );
-              if (next) onBuyerLocationChange(next);
+              if (next) {
+                onProfileChange({
+                  address: {
+                    ...(profileDraft.address ?? {}),
+                    city: next.city,
+                    state: next.state,
+                    country: "IN",
+                  },
+                });
+              }
             }}
           >
             {indianServiceLocations.map((location) => (
@@ -850,6 +939,36 @@ function SettingsView({ buyerLocation, onBuyerLocationChange, theme, onThemeTogg
               </option>
             ))}
           </select>
+        </div>
+        <div className="settings-row">
+          <span>
+            <strong>PIN code</strong>
+            <small>Required for profile completeness.</small>
+          </span>
+          <input
+            className="settings-input"
+            value={profileDraft.address?.pincode ?? ""}
+            placeholder="390001"
+            onChange={(event) =>
+              onProfileChange({
+                address: {
+                  ...(profileDraft.address ?? {}),
+                  pincode: event.target.value,
+                  country: "IN",
+                },
+              })
+            }
+          />
+        </div>
+        <div className="settings-row">
+          <span>
+            <strong>Profile status</strong>
+            <small>{profileMessage || "Save an address to unlock queues and listings."}</small>
+          </span>
+          <button className="settings-button" type="button" onClick={onProfileSave} disabled={isSavingProfile}>
+            <MapPin size={16} />
+            {isSavingProfile ? "Saving..." : profileComplete ? "Update profile" : "Save profile"}
+          </button>
         </div>
         <div className="settings-row">
           <span>
@@ -871,9 +990,9 @@ function SettingsView({ buyerLocation, onBuyerLocationChange, theme, onThemeTogg
         <div className="settings-row">
           <span>
             <strong>Payment</strong>
-            <small>Mock checkout only. Item payment routes to seller, delivery fee to Amazon.</small>
+            <small>Locked until pickup partner verifies identity, colour/variant, and condition.</small>
           </span>
-          <Badge tone="neutral">Simulated</Badge>
+          <Badge tone="neutral">Manual review first</Badge>
         </div>
       </section>
     </main>
@@ -882,12 +1001,13 @@ function SettingsView({ buyerLocation, onBuyerLocationChange, theme, onThemeTogg
 
 function ListingDrawer({
   buyerLocation,
-  checkoutState,
   isSignedIn,
   listing,
   onAddToCart,
-  onBuy,
   onClose,
+  onJoinQueue,
+  profileComplete,
+  queueState,
   signedInCustomerId,
 }) {
   if (!listing) return null;
@@ -924,8 +1044,7 @@ function ListingDrawer({
               <span>{listing.badge}</span>
               <strong>{formatMarketplaceCurrency(listing.price)}</strong>
               <small>
-                Original {formatMarketplaceCurrency(listing.item.originalPrice)} ·{" "}
-                {listing.discountPercent}% off
+                Preliminary value · original {formatMarketplaceCurrency(listing.item.originalPrice)}
               </small>
             </div>
             <section className="proof-box">
@@ -947,62 +1066,84 @@ function ListingDrawer({
               </p>
             </section>
             <section className="proof-box">
-              <h3>Transparent scorecard</h3>
-              <ScoreBar label="Functional" value={listing.scorecard.functionalScore} />
-              <ScoreBar label="Cosmetic" value={listing.scorecard.cosmeticScore} />
-              <ScoreBar label="Packaging" value={listing.scorecard.packagingScore} />
-              <ScoreBar label="Accessories" value={listing.scorecard.accessoryCompleteness} />
+              <h3>Preliminary AI check</h3>
+              <div className="ai-evidence-grid compact">
+                <span>
+                  <small>Product match</small>
+                  <strong>{Math.round(listing.review?.productMatchScore ?? listing.scorecard?.identityScore ?? 0)}%</strong>
+                </span>
+                <span>
+                  <small>Colour / variant</small>
+                  <strong>{listing.review?.colorStatus === "mismatch" ? "Review" : "Checked"}</strong>
+                </span>
+                <span>
+                  <small>Payment</small>
+                  <strong>Locked</strong>
+                </span>
+              </div>
               <p>
-                Grade {listing.grade.grade}: {listing.grade.summary}
+                Preliminary grade {listing.grade.grade}: {listing.grade.summary}
               </p>
             </section>
             <section className="checkout-split">
-              <h3>Checkout split</h3>
+              <h3>Payment unlock preview</h3>
               <div>
-                <span>Item payment to seller</span>
+                <span>Preliminary item value</span>
                 <b>{formatMarketplaceCurrency(listing.price)}</b>
               </div>
               <div>
-                <span>Amazon Delivery Fee</span>
+                <span>Estimated delivery fee</span>
                 <b>{formatMarketplaceCurrency(deliveryFee)}</b>
               </div>
               <div>
-                <span>Total mock payment</span>
+                <span>Estimated total after review</span>
                 <b>{formatMarketplaceCurrency(listing.price + deliveryFee)}</b>
               </div>
             </section>
+            <p className="seller-hold-note">
+              The AI grade is preliminary and may change. Payment opens only after
+              the delivery partner manually verifies the item during seller pickup.
+            </p>
             <p className="seller-hold-note">{listing.logistics}</p>
-            {checkoutState?.receipt?.listingId === listing.id ? (
+            {queueState?.interest?.listingId === listing.id ? (
               <section className="payment-success">
                 <BadgeCheck size={22} />
-                <strong>Payment done</strong>
+                <strong>Added to buyer queue</strong>
                 <span>
-                  Receipt {checkoutState.receipt.id} · pickup scheduled from seller home.
+                  Payment is locked until pickup verification. Queue ID {queueState.interest.id}.
                 </span>
               </section>
             ) : (
               <div className="drawer-actions">
                 <button className="secondary-action" type="button" onClick={() => onAddToCart(listing)}>
-                  <ShoppingCart size={17} /> Add to cart
+                  <ShoppingCart size={17} /> Save
                 </button>
                 <button
                   className="primary-action"
                   type="button"
-                  disabled={!isSignedIn || isOwnListing || checkoutState?.status === "loading" || !delivery.allowed}
-                  onClick={() => onBuy(listing)}
+                  disabled={
+                    !isSignedIn ||
+                    !profileComplete ||
+                    isOwnListing ||
+                    queueState?.status === "loading" ||
+                    !delivery.allowed
+                  }
+                  onClick={() => onJoinQueue(listing)}
                 >
                   <CircleDollarSign size={17} />
                   {!isSignedIn
-                    ? "Sign in to buy"
+                    ? "Sign in to queue"
+                    : !profileComplete
+                      ? "Add address first"
                     : isOwnListing
                       ? "Your own listing"
-                      : checkoutState?.status === "loading"
-                        ? "Processing..."
-                        : "Buy now"}
+                      : queueState?.status === "loading"
+                        ? "Joining queue..."
+                        : "Join buyer queue"}
                 </button>
               </div>
             )}
-            {checkoutState?.error && <p className="auth-error">{checkoutState.error}</p>}
+            {queueState?.error && <p className="auth-error">{queueState.error}</p>}
           </div>
         ) : (
           <div className="drawer-body">
@@ -1052,7 +1193,7 @@ function CartDrawer({ buyerLocation, cartItems, onClose, onOpenListing, onRemove
         onClick={(event) => event.stopPropagation()}
       >
         <header>
-          <h2>Cart</h2>
+        <h2>Saved items</h2>
           <button type="button" aria-label="Close cart" onClick={onClose}>
             <X size={18} />
           </button>
@@ -1098,7 +1239,7 @@ function CartDrawer({ buyerLocation, cartItems, onClose, onOpenListing, onRemove
             </section>
           )}
           <section className="checkout-split">
-            <h3>Cart estimate</h3>
+            <h3>Saved estimate</h3>
             <div>
               <span>Item subtotal</span>
               <b>{formatMarketplaceCurrency(subtotal)}</b>
@@ -1113,8 +1254,8 @@ function CartDrawer({ buyerLocation, cartItems, onClose, onOpenListing, onRemove
             </div>
           </section>
           <p className="seller-hold-note">
-            Buy from an item detail page to simulate payment. Cart keeps browsing state
-            without creating a real payment.
+            Saving does not reserve or charge anything. Open a verified listing and
+            join the buyer queue when you want pickup-review priority.
           </p>
         </div>
       </aside>
@@ -1144,7 +1285,6 @@ export function App() {
   const [buyerLocation, setBuyerLocation] = useState(defaultBuyerLocation);
   const [cartItems, setCartItems] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("All categories");
-  const [checkoutState, setCheckoutState] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
   const [gradeFilter, setGradeFilter] = useState("All grades");
@@ -1160,6 +1300,19 @@ export function App() {
   const [orders, setOrders] = useState([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [profileDraft, setProfileDraft] = useState({
+    address: {
+      addressLine: "",
+      city: defaultBuyerLocation.city,
+      state: defaultBuyerLocation.state,
+      country: "IN",
+      pincode: "",
+    },
+  });
+  const [profileMessage, setProfileMessage] = useState("");
+  const [isSavingProfile, setSavingProfile] = useState(false);
+  const [queueItems, setQueueItems] = useState([]);
+  const [queueState, setQueueState] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedListing, setSelectedListing] = useState(null);
@@ -1167,6 +1320,8 @@ export function App() {
   const [theme, setTheme] = useState("light");
 
   const isSignedIn = Boolean(auth.session);
+  const normalizedProfile = normalizeCustomerProfile(profileDraft);
+  const profileComplete = isSignedIn && normalizedProfile.complete;
   const signedInCustomerId = auth.session?.user?.subject
     ? `cognito#${auth.session.user.subject}`
     : undefined;
@@ -1211,8 +1366,21 @@ export function App() {
     if (!isSignedIn) {
       setOrders([]);
       setSelectedOrder(null);
+      setProfileMessage("");
       return;
     }
+
+    fetchC2CProfile()
+      .then((payload) => {
+        if (payload.profile?.address) {
+          setProfileDraft({ address: payload.profile.address });
+          setBuyerLocation(payload.profile.address);
+          setProfileMessage("Profile address loaded.");
+        }
+      })
+      .catch((error) => {
+        setProfileMessage(error.message);
+      });
 
     fetchC2COrders()
       .then((payload) => {
@@ -1223,6 +1391,17 @@ export function App() {
         setListingMessage(error.message);
       });
   }, [isSignedIn]);
+
+  useEffect(() => {
+    if (normalizedProfile.address) {
+      setBuyerLocation(normalizedProfile.address);
+    }
+  }, [
+    normalizedProfile.address?.addressLine,
+    normalizedProfile.address?.city,
+    normalizedProfile.address?.pincode,
+    normalizedProfile.address?.state,
+  ]);
 
   async function refreshMarketplace() {
     setLoadingMarketplace(true);
@@ -1282,9 +1461,9 @@ export function App() {
     }
 
     setUploading(true);
-    setListingMessage("Running AWS AI evidence and deterministic scorecard...");
+    setListingMessage("Running AWS AI visual and colour/variant evidence...");
     try {
-      const result = await evaluateC2CListingUpload(selectedFile, selectedOrder.id);
+      const result = await evaluateC2CListingUpload(selectedFile, selectedOrder.id, normalizedProfile);
       setEvaluation(result);
       setListingMessage(result.customerMessage ?? "AI grade ready.");
     } catch (error) {
@@ -1303,7 +1482,7 @@ export function App() {
     setUploading(true);
     setListingMessage("Publishing listing to the global NexTurn marketplace...");
     try {
-      const result = await createC2CListing(selectedFile, selectedOrder.id);
+      const result = await createC2CListing(selectedFile, selectedOrder.id, normalizedProfile);
       setListingMessage(result.customerMessage ?? "Listing published.");
       await refreshMarketplace();
       setSelectedListing(result.listing);
@@ -1315,18 +1494,32 @@ export function App() {
     }
   }
 
-  async function handleBuy(listing) {
-    setCheckoutState({ status: "loading" });
+  async function handleJoinQueue(listing) {
+    if (!profileComplete) {
+      setQueueState({
+        status: "error",
+        error: "Add your profile address before joining a buyer queue.",
+      });
+      setActiveView("settings");
+      return;
+    }
+
+    setQueueState({ status: "loading" });
     try {
-      const result = await checkoutC2CListing(listing.id, buyerLocation);
-      setCheckoutState({
+      const result = await joinC2CInterestQueue(listing.id, normalizedProfile);
+      setQueueState({
         status: "success",
-        receipt: result.receipt,
+        interest: result.interest,
         message: result.customerMessage,
       });
+      setQueueItems((current) =>
+        current.some((item) => item.id === result.interest.id)
+          ? current
+          : [...current, result.interest],
+      );
       await refreshMarketplace();
     } catch (error) {
-      setCheckoutState({
+      setQueueState({
         status: "error",
         error: error.message,
       });
@@ -1334,16 +1527,20 @@ export function App() {
   }
 
   function handleOpenListing(listing) {
-    setCheckoutState(null);
+    setQueueState(null);
     setSelectedListing(listing);
     setCartOpen(false);
   }
 
   function handleAddToCart(item) {
+    if (!isSignedIn) {
+      setListingMessage("Sign in before saving or queuing marketplace items.");
+      return;
+    }
     setCartItems((current) =>
       current.some((cartItem) => cartItem.id === item.id) ? current : [...current, item],
     );
-    setListingMessage(`${item.item?.title ?? item.title} added to cart.`);
+    setListingMessage(`${item.item?.title ?? item.title} saved.`);
   }
 
   function handleRemoveFromCart(itemId) {
@@ -1352,6 +1549,32 @@ export function App() {
 
   function toggleTheme() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }
+
+  function updateProfileDraft(patch) {
+    setProfileDraft((current) => ({
+      ...current,
+      ...patch,
+      address: {
+        ...(current.address ?? {}),
+        ...(patch.address ?? {}),
+      },
+    }));
+  }
+
+  async function handleSaveProfile() {
+    setSavingProfile(true);
+    setProfileMessage("Saving profile address...");
+    try {
+      const result = await saveC2CProfile(profileDraft);
+      setProfileDraft({ address: result.profile.address });
+      setBuyerLocation(result.profile.address);
+      setProfileMessage(result.customerMessage ?? "Profile address saved.");
+    } catch (error) {
+      setProfileMessage(error.message);
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   return (
@@ -1395,9 +1618,11 @@ export function App() {
           listingMessage={listingMessage}
           onEvaluate={handleEvaluate}
           onFileSelected={handleFileSelected}
+          onOpenProfile={() => setActiveView("settings")}
           onPublish={handlePublish}
           onSelectOrder={handleSelectOrder}
           orders={orders}
+          profileComplete={profileComplete}
           selectedOrder={selectedOrder}
         />
       )}
@@ -1426,12 +1651,16 @@ export function App() {
           onOpenListing={handleOpenListing}
         />
       )}
-      {activeView === "impact" && <ImpactView />}
+      {activeView === "impact" && <ImpactView marketplace={marketplace} queueItems={queueItems} />}
       {activeView === "settings" && (
         <SettingsView
-          buyerLocation={buyerLocation}
-          onBuyerLocationChange={setBuyerLocation}
+          isSavingProfile={isSavingProfile}
+          onProfileChange={updateProfileDraft}
+          onProfileSave={handleSaveProfile}
           onThemeToggle={toggleTheme}
+          profileComplete={profileComplete}
+          profileDraft={profileDraft}
+          profileMessage={profileMessage}
           theme={theme}
         />
       )}
@@ -1439,12 +1668,13 @@ export function App() {
 
       <ListingDrawer
         buyerLocation={buyerLocation}
-        checkoutState={checkoutState}
         isSignedIn={isSignedIn}
         listing={selectedListing}
         onAddToCart={handleAddToCart}
-        onBuy={handleBuy}
         onClose={() => setSelectedListing(null)}
+        onJoinQueue={handleJoinQueue}
+        profileComplete={profileComplete}
+        queueState={queueState}
         signedInCustomerId={signedInCustomerId}
       />
       <CartDrawer

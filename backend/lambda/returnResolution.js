@@ -10,9 +10,12 @@ import { formatCurrency, summarizeDecision } from "../../src/lib/decisionEngine.
 import { analyzeReturnImage } from "../lib/aiImageAnalysis.js";
 import {
   getC2CListing,
+  getCustomerProfile,
   listC2CListings,
+  saveC2CInterest,
   saveC2CCheckout,
   saveC2CListing,
+  saveCustomerProfile,
   saveExchangeConnection,
   saveRouteSelection,
   saveScanEvaluation,
@@ -21,10 +24,13 @@ import {
   buildFallbackMarketplace,
   buildGenericFallbackItems,
   createCheckoutReceipt,
+  createInterestQueueEntry,
   createListingFromEvaluation,
   findCustomerOrder,
   mergeMarketplaceListings,
+  normalizeMarketplaceListing,
   normalizeIndiaLocation,
+  normalizeCustomerProfile,
   ordersForCustomer,
 } from "../../src/lib/c2cCommerce.js";
 import { defaultBuyerLocation, indianServiceLocations, seedC2CListings } from "../../src/data/c2cCommerce.js";
@@ -95,6 +101,41 @@ function requireIdentity(event) {
   }
 
   return { identity };
+}
+
+async function resolveRequiredProfile(identity, providedProfile) {
+  const provided = normalizeCustomerProfile(providedProfile ?? {});
+  if (provided.complete) {
+    return {
+      profile: {
+        customerId: identity.customerId,
+        email: identity.email,
+        name: identity.name,
+        address: provided.address,
+      },
+      source: "request",
+    };
+  }
+
+  const stored = await getCustomerProfile(identity.customerId);
+  const storedProfile = normalizeCustomerProfile(stored.profile ?? {});
+  if (storedProfile.complete) {
+    return {
+      profile: {
+        ...(stored.profile ?? {}),
+        address: storedProfile.address,
+      },
+      source: stored.mode,
+    };
+  }
+
+  return {
+    error: json(422, {
+      error: "Profile address required",
+      message:
+        "Add your India address in Profile before listing an item or joining a buyer queue.",
+    }),
+  };
 }
 
 function caseForIdentity(identity) {
@@ -254,7 +295,7 @@ async function buildMarketplacePayload() {
     },
     genericSource: genericResult.source,
     marketplaceRule:
-      "Direct C2C: no warehouse. Seller keeps the item until a buyer pays, then Amazon facilitates pickup, quality check, and delivery.",
+      "Direct C2C: no warehouse. Seller keeps the item until a buyer joins the queue and pickup verification unlocks payment.",
   };
 }
 
@@ -262,7 +303,15 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
   const auth = requireIdentity(event);
   if (auth.error) return auth.error;
 
-  const order = findCustomerOrder(body.orderId, auth.identity);
+  const profileResult = await resolveRequiredProfile(auth.identity, body.profile);
+  if (profileResult.error) return profileResult.error;
+  const identityWithProfile = {
+    ...auth.identity,
+    address: profileResult.profile.address,
+    location: profileResult.profile.address,
+  };
+
+  const order = findCustomerOrder(body.orderId, identityWithProfile);
   if (!order) {
     return json(404, {
       error: "Order not found",
@@ -275,14 +324,14 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     fileName: body.fileName,
   };
   const { aiAnalysis, media } = await analyzeReturnImage({
-    returnCase: orderToReturnCase(order, auth.identity),
+    returnCase: orderToReturnCase(order, identityWithProfile),
     imageBase64: body.imageBase64,
     mimeType: body.mimeType,
     fileName: body.fileName,
   });
   const listing = createListingFromEvaluation({
     aiAnalysis,
-    identity: auth.identity,
+    identity: identityWithProfile,
     media,
     order,
     uploadContext,
@@ -296,7 +345,7 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
       aiAnalysis,
       media,
       customerMessage:
-        "AI grading complete. The item is still with you; list it only when you are ready for buyer checkout and pickup.",
+        "Preliminary AI review complete. The item stays with you; buyers can join a queue, and payment unlocks only after pickup verification.",
     });
   }
 
@@ -325,7 +374,51 @@ async function evaluateC2CListing(body, event, { persist = false } = {}) {
     media,
     persistence,
     customerMessage:
-      "Listed on NexTurn Marketplace. Keep the item at home until a buyer purchases it; Amazon delivery verifies quality at pickup.",
+      "Listed on NexTurn Marketplace. Keep the item at home; buyers can join the queue until Amazon pickup verification unlocks payment.",
+  });
+}
+
+async function getProfilePayload(event) {
+  const auth = requireIdentity(event);
+  if (auth.error) return auth.error;
+
+  const stored = await getCustomerProfile(auth.identity.customerId);
+  return json(200, {
+    identity: auth.identity,
+    profile: stored.profile ?? null,
+    profileComplete: normalizeCustomerProfile(stored.profile ?? {}).complete,
+    persistence: {
+      mode: stored.mode,
+      persisted: stored.persisted,
+    },
+  });
+}
+
+async function saveProfilePayload(body, event) {
+  const auth = requireIdentity(event);
+  if (auth.error) return auth.error;
+
+  const profile = normalizeCustomerProfile(body.profile ?? body);
+  if (!profile.complete) {
+    return json(422, {
+      error: "Invalid profile address",
+      message: profile.message,
+    });
+  }
+
+  const normalizedProfile = {
+    customerId: auth.identity.customerId,
+    email: auth.identity.email,
+    name: auth.identity.name,
+    address: profile.address,
+  };
+  const persistence = await saveCustomerProfile(auth.identity, normalizedProfile);
+
+  return json(200, {
+    profile: normalizedProfile,
+    profileComplete: true,
+    persistence,
+    customerMessage: "Profile address saved. You can now list items and join buyer queues.",
   });
 }
 
@@ -337,8 +430,7 @@ async function getC2CListingPayload(listingId) {
   }
 
   const persisted = await getC2CListing(listingId);
-  const listing =
-    persisted.listing ?? seedC2CListings.find((item) => item.id === listingId) ?? null;
+  const listing = persisted.listing ?? seedC2CListings.find((item) => item.id === listingId) ?? null;
 
   if (!listing) {
     return json(404, {
@@ -347,7 +439,7 @@ async function getC2CListingPayload(listingId) {
   }
 
   return json(200, {
-    listing,
+    listing: normalizeMarketplaceListing(listing),
     persistence: {
       mode: persisted.mode,
       persisted: Boolean(persisted.listing),
@@ -360,10 +452,11 @@ async function checkoutC2CListing(body, event) {
   if (auth.error) return auth.error;
 
   const persisted = await getC2CListing(body.listingId);
-  const listing =
-    persisted.listing ?? seedC2CListings.find((item) => item.id === body.listingId) ?? null;
+  const listing = normalizeMarketplaceListing(
+    persisted.listing ?? seedC2CListings.find((item) => item.id === body.listingId) ?? null,
+  );
 
-  if (!listing) {
+  if (!listing?.id) {
     return json(404, {
       error: "Listing not found",
     });
@@ -380,6 +473,14 @@ async function checkoutC2CListing(body, event) {
     return json(422, {
       error: "Cannot buy your own listing",
       message: "Use a different signed-in buyer account to complete the C2C purchase.",
+    });
+  }
+
+  if (!listing.review?.paymentUnlocked) {
+    return json(409, {
+      error: "Payment locked",
+      message:
+        "Payment opens only after an Amazon delivery partner manually verifies the item during pickup. Join the buyer queue first.",
     });
   }
 
@@ -403,6 +504,53 @@ async function checkoutC2CListing(body, event) {
     persistence,
     customerMessage:
       "Payment simulated. Item payment is assigned to the seller; Amazon delivery fee covers pickup, quality check, and buyer delivery.",
+  });
+}
+
+async function joinC2CInterestQueue(body, event) {
+  const auth = requireIdentity(event);
+  if (auth.error) return auth.error;
+
+  const profileResult = await resolveRequiredProfile(auth.identity, body.profile);
+  if (profileResult.error) return profileResult.error;
+
+  const persisted = await getC2CListing(body.listingId);
+  const listing = normalizeMarketplaceListing(
+    persisted.listing ?? seedC2CListings.find((item) => item.id === body.listingId) ?? null,
+  );
+
+  if (!listing?.id) {
+    return json(404, {
+      error: "Listing not found",
+    });
+  }
+
+  if (listing.status !== "active") {
+    return json(409, {
+      error: "Listing unavailable",
+      message: "This item is no longer available for C2C interest queue.",
+    });
+  }
+
+  if (listing.sellerId === auth.identity.customerId) {
+    return json(422, {
+      error: "Cannot queue for your own listing",
+      message: "Use a different signed-in buyer account to join this listing queue.",
+    });
+  }
+
+  const interest = createInterestQueueEntry({
+    buyerIdentity: auth.identity,
+    buyerProfile: profileResult.profile,
+    listing,
+  });
+  const persistence = await saveC2CInterest(listing, interest);
+
+  return json(200, {
+    interest,
+    persistence,
+    customerMessage:
+      "You joined the buyer queue. Payment remains locked until pickup verification confirms the final item condition and value.",
   });
 }
 
@@ -460,7 +608,7 @@ async function evaluateScan(body, event) {
     ...aiAnalysis,
     gradeImpact: identityMismatch
       ? "The AWS label evidence did not match the expected item category, so NexTurn raised the fraud-risk signal before calculating the condition grade."
-      : "AWS label evidence was used as identity/accessory context. The final grade is still calculated by the explainable condition scorecard.",
+      : "AWS label evidence was used for product identity, colour, and visual similarity checks before calculating the preliminary condition grade.",
   };
   const payload = createCasePayload({
     scan: {
@@ -567,6 +715,14 @@ export async function handler(event = {}) {
     return json(200, await buildMarketplacePayload());
   }
 
+  if (method === "GET" && path.endsWith("/c2c/profile")) {
+    return getProfilePayload(event);
+  }
+
+  if (method === "POST" && path.endsWith("/c2c/profile")) {
+    return saveProfilePayload(parseBody(event), event);
+  }
+
   if (method === "GET" && path.endsWith("/c2c/listing")) {
     return getC2CListingPayload(event.queryStringParameters?.listingId);
   }
@@ -577,6 +733,10 @@ export async function handler(event = {}) {
 
   if (method === "POST" && path.endsWith("/c2c/listings")) {
     return evaluateC2CListing(parseBody(event), event, { persist: true });
+  }
+
+  if (method === "POST" && path.endsWith("/c2c/interest")) {
+    return joinC2CInterestQueue(parseBody(event), event);
   }
 
   if (method === "POST" && path.endsWith("/c2c/checkout")) {
@@ -644,9 +804,12 @@ export async function handler(event = {}) {
       "GET /me",
       "GET /c2c/orders",
       "GET /c2c/marketplace",
+      "GET /c2c/profile",
+      "POST /c2c/profile",
       "GET /c2c/listing?listingId=...",
       "POST /c2c/listings/evaluate",
       "POST /c2c/listings",
+      "POST /c2c/interest",
       "POST /c2c/checkout",
       "POST /route",
       "POST /scan/evaluate",
