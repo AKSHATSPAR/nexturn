@@ -686,11 +686,24 @@ export function normalizeMarketplaceListing(listing = {}) {
         (item?.originalPrice ? Math.round((1 - price / Number(item.originalPrice)) * 100) : 0),
     },
   });
+  const legacySellerUploadImage =
+    seedC2CListings.find(
+      (seedListing) =>
+        seedListing.item?.id === item?.id ||
+        seedListing.item?.asin === item?.asin ||
+        seedListing.item?.title === item?.title,
+    )?.uploadedImagePreview;
 
   return {
     ...listing,
     item,
     image: listing.image ?? item?.image,
+    uploadedImagePreview:
+      listing.uploadedImagePreview ??
+      listing.uploadedImage ??
+      legacySellerUploadImage ??
+      listing.image ??
+      item?.image,
     category: listing.category ?? item?.marketplaceCategory ?? productMarketplaceCategory(item?.category),
     sellerName: listing.sellerName ?? "NexTurn seller",
     sellerCity: sellerLocation.city,
