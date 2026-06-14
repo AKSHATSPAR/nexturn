@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { orderProofHistory } from "../src/data/c2cCommerce.js";
-import { createListingFromEvaluation } from "../src/lib/c2cCommerce.js";
+import { createListingFromEvaluation, mergeMarketplaceListings } from "../src/lib/c2cCommerce.js";
 
 test("blocks marketplace publishing when uploaded photo mismatches selected order", () => {
   const listing = createListingFromEvaluation({
@@ -64,4 +64,36 @@ test("downgrades weak visual matches even when the broad product category matche
   assert.equal(listing.publishable, true);
   assert.equal(listing.grade.grade, "C");
   assert.ok(listing.scorecard.damageFlags.includes("visual_condition_risk"));
+});
+
+test("normalizes legacy persisted listings into INR marketplace data", () => {
+  const marketplace = mergeMarketplaceListings(
+    [
+      {
+        id: "legacy_airpods_listing",
+        status: "active",
+        createdAt: "2026-06-14T10:00:00.000Z",
+        sellerId: "legacy_seller",
+        item: {
+          ...orderProofHistory[0],
+          originalPrice: 549,
+        },
+        grade: {
+          grade: "A",
+          label: "Like new",
+        },
+        price: 405.99,
+        discountPercent: 26,
+      },
+    ],
+    [],
+  );
+
+  const listing = marketplace.heroListings.find((item) => item.id === "legacy_airpods_listing");
+
+  assert.ok(listing.price > 40000);
+  assert.equal(listing.item.originalPrice, orderProofHistory[0].originalPrice);
+  assert.equal(listing.category, "Electronics");
+  assert.ok(listing.sellerCity);
+  assert.ok(listing.deliveryFee >= 79);
 });

@@ -44,6 +44,11 @@ const fallbackSellerLocations = [
   indianServiceLocations.find((location) => location.city === "Guwahati"),
 ].filter(Boolean);
 
+function fallbackSellerLocationForKey(key = "") {
+  const checksum = [...String(key)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return fallbackSellerLocations[checksum % fallbackSellerLocations.length] ?? defaultBuyerLocation;
+}
+
 export function formatMarketplaceCurrency(value) {
   return currency.format(Number(value ?? 0));
 }
@@ -495,6 +500,62 @@ export function createCheckoutReceipt({ buyerIdentity = {}, buyerLocation = defa
   };
 }
 
+export function normalizeMarketplaceListing(listing = {}) {
+  const proofOrder =
+    orderProofHistory.find((order) => order.id === listing.item?.id || order.asin === listing.item?.asin) ??
+    orderProofHistory.find((order) => order.title === listing.item?.title) ??
+    listing.item;
+  const item = proofOrder
+    ? {
+        ...listing.item,
+        ...proofOrder,
+      }
+    : listing.item;
+  const sellerLocation =
+    normalizeIndiaLocation(listing.sellerLocation) ??
+    normalizeIndiaLocation({ city: listing.sellerCity, state: listing.sellerState, country: "IN" }) ??
+    fallbackSellerLocationForKey(listing.sellerId ?? listing.id);
+  const hasLegacyUsdPrice = Number(listing.price ?? 0) > 0 && Number(listing.price ?? 0) < 1000;
+  const hasLegacyUsdOriginal =
+    Number(listing.item?.originalPrice ?? 0) > 0 && Number(listing.item?.originalPrice ?? 0) < 5000;
+  const shouldReprice = hasLegacyUsdPrice || hasLegacyUsdOriginal;
+  const repriced = shouldReprice && item?.originalPrice
+    ? calculateDiscountedPrice(item.originalPrice, listing.grade ?? { grade: "B" })
+    : null;
+  const delivery = calculateDeliveryFee({
+    sellerLocation,
+    buyerLocation: defaultBuyerLocation,
+    weightKg: item?.estimatedWeightKg,
+  });
+  const price = repriced?.price ?? Number(listing.price ?? 0);
+  const deliveryFee = delivery.allowed ? delivery.fee : Number(listing.deliveryFee ?? DEFAULT_DELIVERY_FEE_INR);
+
+  return {
+    ...listing,
+    item,
+    image: listing.image ?? item?.image,
+    category: listing.category ?? item?.marketplaceCategory ?? productMarketplaceCategory(item?.category),
+    sellerName: listing.sellerName ?? "NexTurn seller",
+    sellerCity: sellerLocation.city,
+    sellerState: sellerLocation.state,
+    sellerLocation,
+    sellerNeighborhood: listing.sellerNeighborhood ?? sellerLocation.city,
+    price,
+    discountPercent:
+      repriced?.discountPercent ??
+      listing.discountPercent ??
+      (item?.originalPrice ? Math.round((1 - price / Number(item.originalPrice)) * 100) : 0),
+    deliveryFee,
+    deliveryEstimate: listing.deliveryEstimate ?? delivery,
+    settlement: {
+      ...(listing.settlement ?? {}),
+      itemPaymentToSeller: price,
+      deliveryFeeToAmazon: deliveryFee,
+      buyerTotal: Number((price + deliveryFee).toFixed(2)),
+    },
+  };
+}
+
 export function buildFallbackMarketplace() {
   return {
     heroListings: seedC2CListings,
@@ -532,8 +593,9 @@ export function mergeMarketplaceListings(persistedListings = [], genericItems = 
   const listingMap = new Map();
 
   [...persistedListings, ...seedC2CListings].forEach((listing) => {
-    if (listing.status === "active") {
-      listingMap.set(listing.id, listing);
+    const normalized = normalizeMarketplaceListing(listing);
+    if (normalized.status === "active") {
+      listingMap.set(normalized.id, normalized);
     }
   });
 
