@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { App, CfnOutput, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { App, CfnOutput, Duration, RemovalPolicy, SecretValue, Stack } from "aws-cdk-lib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -8,7 +8,9 @@ import {
   ProjectionType,
   Table,
 } from "aws-cdk-lib/aws-dynamodb";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Architecture, Runtime } from "aws-cdk-lib/aws-lambda";
@@ -102,11 +104,101 @@ class NexTurnStack extends Stack {
     const httpApi = new HttpApi(this, "NexTurnHttpApi", {
       apiName: "nexturn-return-resolution-api",
       corsPreflight: {
-        allowHeaders: ["content-type"],
+        allowHeaders: ["authorization", "content-type"],
         allowMethods: [HttpMethod.GET, HttpMethod.POST, HttpMethod.OPTIONS],
         allowOrigins: ["*"],
       },
     });
+
+    const userPool = new cognito.UserPool(this, "CustomerUserPool", {
+      selfSignUpEnabled: true,
+      signInAliases: {
+        email: true,
+      },
+      standardAttributes: {
+        email: {
+          required: true,
+          mutable: true,
+        },
+        fullname: {
+          required: false,
+          mutable: true,
+        },
+      },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const accountSuffix = (process.env.CDK_DEFAULT_ACCOUNT ?? "112920804206")
+      .replace(/[^a-zA-Z0-9-]/g, "")
+      .toLowerCase();
+    const authDomain = new cognito.UserPoolDomain(this, "CustomerAuthDomain", {
+      userPool,
+      cognitoDomain: {
+        domainPrefix: process.env.NEXTURN_AUTH_DOMAIN_PREFIX ?? `nexturn-${accountSuffix}`,
+      },
+    });
+
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const supportedIdentityProviders = [cognito.UserPoolClientIdentityProvider.COGNITO];
+    let googleProvider;
+
+    if (googleClientId && googleClientSecret) {
+      googleProvider = new cognito.UserPoolIdentityProviderGoogle(
+        this,
+        "GoogleIdentityProvider",
+        {
+          userPool,
+          clientId: googleClientId,
+          clientSecretValue: SecretValue.unsafePlainText(googleClientSecret),
+          scopes: ["openid", "email", "profile"],
+          attributeMapping: {
+            email: cognito.ProviderAttribute.GOOGLE_EMAIL,
+            fullname: cognito.ProviderAttribute.GOOGLE_NAME,
+          },
+        },
+      );
+      supportedIdentityProviders.push(cognito.UserPoolClientIdentityProvider.GOOGLE);
+    }
+
+    const callbackUrls = [
+      `${httpApi.apiEndpoint}/`,
+      "http://127.0.0.1:5173/",
+      "http://localhost:5173/",
+    ];
+    const userPoolClient = userPool.addClient("CustomerWebClient", {
+      generateSecret: false,
+      authFlows: {
+        userPassword: true,
+        userSrp: true,
+      },
+      supportedIdentityProviders,
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+        },
+        scopes: [
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.PROFILE,
+        ],
+        callbackUrls,
+        logoutUrls: callbackUrls,
+      },
+    });
+
+    if (googleProvider) {
+      userPoolClient.node.addDependency(googleProvider);
+    }
+
+    const customerAuthorizer = new HttpUserPoolAuthorizer(
+      "CustomerAuthorizer",
+      userPool,
+      {
+        userPoolClients: [userPoolClient],
+      },
+    );
 
     const integration = new HttpLambdaIntegration("ReturnResolutionIntegration", apiHandler);
     httpApi.addRoutes({
@@ -125,11 +217,25 @@ class NexTurnStack extends Stack {
       path: "/scan/evaluate",
       methods: [HttpMethod.POST],
       integration,
+      authorizer: customerAuthorizer,
     });
     httpApi.addRoutes({
       path: "/route",
       methods: [HttpMethod.POST],
       integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/exchange/connect",
+      methods: [HttpMethod.POST],
+      integration,
+      authorizer: customerAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/me",
+      methods: [HttpMethod.GET],
+      integration,
+      authorizer: customerAuthorizer,
     });
 
     const siteHandler = new NodejsFunction(this, "SiteHandler", {
@@ -151,6 +257,14 @@ class NexTurnStack extends Stack {
       },
       timeout: Duration.seconds(8),
       memorySize: 256,
+      environment: {
+        NEX_TURN_AUTH_ENABLED: "true",
+        NEX_TURN_AUTH_CLIENT_ID: userPoolClient.userPoolClientId,
+        NEX_TURN_AUTH_DOMAIN: authDomain.baseUrl(),
+        NEX_TURN_AUTH_REDIRECT_URI: `${httpApi.apiEndpoint}/`,
+        NEX_TURN_AUTH_LOGOUT_URI: `${httpApi.apiEndpoint}/`,
+        NEX_TURN_AUTH_GOOGLE_ENABLED: googleProvider ? "true" : "false",
+      },
     });
 
     const siteIntegration = new HttpLambdaIntegration("SiteIntegration", siteHandler);
@@ -169,6 +283,10 @@ class NexTurnStack extends Stack {
     new CfnOutput(this, "SiteUrl", { value: httpApi.apiEndpoint });
     new CfnOutput(this, "TableName", { value: table.tableName });
     new CfnOutput(this, "SiteBucketName", { value: siteBucket.bucketName });
+    new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
+    new CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
+    new CfnOutput(this, "AuthDomain", { value: authDomain.baseUrl() });
+    new CfnOutput(this, "GoogleSignInEnabled", { value: googleProvider ? "true" : "false" });
   }
 }
 

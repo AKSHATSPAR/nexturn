@@ -25,11 +25,13 @@ best value. NexTurn turns the return moment into a guided customer decision:
 - AI transparency view that explains there is no rushed custom-trained model; AWS
   AI provides visual signals and the final customer decision remains explainable.
 - Lambda-compatible API with endpoints for case fetch, workspace pages, scan
-  evaluation, and route selection.
+  evaluation, route selection, and order-linked exchange intents.
+- Amazon Cognito Hosted UI for customer sign-in, with optional Google federation
+  enabled when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are supplied.
 - DynamoDB persistence path for scan evaluations, route decisions, trust passport
-  updates, and credit ledger events.
+  updates, order-linked exchange intents, and credit ledger events.
 - AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, private S3 media storage,
-  Rekognition permissions, and CloudWatch logs.
+  Cognito, Rekognition permissions, and CloudWatch logs.
 - Generated product and profile assets for a realistic demo surface.
 
 ## Architecture
@@ -37,7 +39,9 @@ best value. NexTurn turns the return moment into a guided customer decision:
 ```mermaid
 flowchart LR
   Customer["Customer browser"] --> Web["React NexTurn app"]
+  Web --> Auth["Cognito Hosted UI"]
   Web --> API["HTTP API Gateway"]
+  API --> JWT["JWT authorizer"]
   API --> Lambda["Return Resolution Lambda"]
   Lambda --> Rekognition["Amazon Rekognition"]
   Lambda --> S3["Private S3 media bucket"]
@@ -83,6 +87,14 @@ The stack uses pay-per-request DynamoDB and a small ARM Lambda to stay
 free-tier-friendly for prototype traffic. The deployed stack outputs the live
 site/API URL, DynamoDB table name, and backing S3 bucket name for uploaded scan
 media.
+
+### Google Sign-In
+
+The deployed app always includes Cognito email sign-in. Google sign-in is wired
+but intentionally configuration-gated: set `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` before `npm run cdk:deploy` to enable the Google identity
+provider. Without those credentials, the UI shows the Google option as disabled
+instead of pretending federation is active.
 
 ## Key Files
 

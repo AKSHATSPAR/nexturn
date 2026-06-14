@@ -3,6 +3,19 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const mediaBucketName = process.env.NEX_TURN_MEDIA_BUCKET_NAME;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const categoryTerms = {
+  audio: [
+    "audio",
+    "earbud",
+    "earbuds",
+    "earphone",
+    "electronics",
+    "headphone",
+    "headphones",
+    "headset",
+    "microphone",
+  ],
+};
 
 let rekognitionClient;
 let s3Client;
@@ -101,11 +114,30 @@ async function persistUpload({ returnCase, bytes, mimeType, fileName }) {
 }
 
 function labelText(label) {
-  const parents = label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [];
-  return [label.Name, ...parents].join(" ").toLowerCase();
+  const parents =
+    label.parents ?? label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [];
+  return [label.name ?? label.Name, ...parents].join(" ").toLowerCase();
 }
 
-function buildSignals(labels) {
+function isRelevantLabel(label, category) {
+  const expectedTerms = categoryTerms[category] ?? [category];
+  const text = labelText(label);
+  return expectedTerms.some((term) => text.includes(term));
+}
+
+function splitLabelsByExpectedItem(labels, returnCase) {
+  const relevant = labels.filter((label) => isRelevantLabel(label, returnCase.item.category));
+  const ignored = labels.filter((label) => !isRelevantLabel(label, returnCase.item.category));
+  const identityStatus = relevant.length ? "matched" : labels.length ? "mismatch" : "unknown";
+
+  return {
+    relevant,
+    ignored,
+    identityStatus,
+  };
+}
+
+function buildSignals(labels, returnCase) {
   const labelNames = labels.map((label) => labelText(label));
   const hasAudioProduct = labelNames.some((label) =>
     ["headphone", "headphones", "headset", "electronics", "audio"].some((term) =>
@@ -121,31 +153,46 @@ function buildSignals(labels) {
 
   const signals = [];
   if (hasAudioProduct) {
-    signals.push("AWS Rekognition detected an audio/electronics product in the upload");
+    signals.push("Visual identity check matched the expected audio/electronics item");
   }
   if (hasAccessory) {
-    signals.push("AWS Rekognition detected accessory-like objects in the upload");
+    signals.push("Visual evidence includes accessory-like objects");
   }
   if (hasPackageOrTable) {
-    signals.push("AWS Rekognition detected packaging or inspection surface context");
+    signals.push("Visual evidence includes packaging or inspection surface context");
   }
   if (!signals.length && labels.length) {
-    signals.push("AWS Rekognition returned image labels for human inspection review");
+    signals.push(
+      `Visual upload does not confidently match expected ${returnCase.item.category} item; manual review required`,
+    );
   }
 
   return signals;
 }
 
-function summarizeLabels(labels) {
-  const topLabels = labels
+function formatLabels(labels) {
+  return labels
     .slice(0, 5)
-    .map((label) => `${label.Name} ${Math.round(label.Confidence ?? 0)}%`);
+    .map((label) => `${label.name ?? label.Name} ${Math.round(label.confidence ?? label.Confidence ?? 0)}%`);
+}
 
+function summarizeRelevantLabels({ relevant, ignored, identityStatus, returnCase }) {
+  if (identityStatus === "mismatch") {
+    const rawLabels = formatLabels(ignored);
+    return `Visual identity check did not match the expected ${returnCase.item.category} return. Manual review required${
+      rawLabels.length ? `; unrelated labels seen: ${rawLabels.join(", ")}.` : "."
+    }`;
+  }
+
+  const topLabels = formatLabels(relevant);
   if (!topLabels.length) {
     return "AWS Rekognition did not return confident labels for this image.";
   }
 
-  return `AWS Rekognition labels: ${topLabels.join(", ")}.`;
+  const ignoredLabels = formatLabels(ignored);
+  return `Visual identity check matched expected ${returnCase.item.category} evidence: ${topLabels.join(", ")}.${
+    ignoredLabels.length ? ` Ignored unrelated labels: ${ignoredLabels.join(", ")}.` : ""
+  }`;
 }
 
 export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fileName }) {
@@ -196,25 +243,40 @@ export async function analyzeReturnImage({ returnCase, imageBase64, mimeType, fi
       }),
     );
 
-    const labels =
+    const rawLabels =
       response.Labels?.map((label) => ({
         name: label.Name,
         confidence: Number((label.Confidence ?? 0).toFixed(1)),
         parents: label.Parents?.map((parent) => parent.Name).filter(Boolean) ?? [],
       })) ?? [];
-    const inspectionSignals = buildSignals(response.Labels ?? []);
+    const { relevant, ignored, identityStatus } = splitLabelsByExpectedItem(
+      rawLabels,
+      returnCase,
+    );
+    const inspectionSignals = buildSignals(relevant.length ? relevant : rawLabels, returnCase);
 
     return {
       aiAnalysis: {
         provider: "aws-rekognition",
         mode: "live",
         usedAws: true,
-        confidence: labels.length ? "AWS image labels available" : "Low visual confidence",
-        labels,
+        confidence:
+          identityStatus === "matched"
+            ? "Expected product visually matched"
+            : "Needs manual identity review",
+        identityStatus,
+        labels: relevant,
+        ignoredLabels: ignored,
+        rawLabels,
         inspectionSignals,
-        summary: summarizeLabels(response.Labels ?? []),
+        summary: summarizeRelevantLabels({
+          relevant,
+          ignored,
+          identityStatus,
+          returnCase,
+        }),
         limitation:
-          "Rekognition identifies objects and scene signals; final grade remains an explainable customer policy decision.",
+          "Rekognition checks visual identity evidence. The final A/B/C grade comes from functional, cosmetic, accessory, hygiene, packaging, fraud-risk, and demand signals.",
       },
       media,
     };

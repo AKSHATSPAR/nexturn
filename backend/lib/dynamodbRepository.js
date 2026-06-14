@@ -126,3 +126,65 @@ export async function saveRouteSelection(returnCase, selectedRoute) {
 
   return { mode: "dynamodb", persisted: true, tableName };
 }
+
+export async function saveExchangeConnection(returnCase, alternative, exchangeIntent) {
+  const client = await getDocumentClient();
+  if (!client) {
+    return { mode: "seed", persisted: false };
+  }
+
+  const { TransactWriteCommand } = await import("@aws-sdk/lib-dynamodb");
+  const now = new Date().toISOString();
+  const customerId = returnCase.customer.id;
+
+  await client.send(
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: tableName,
+            Item: {
+              pk: `RETURN#${returnCase.id}`,
+              sk: `EXCHANGE#${alternative.id}`,
+              entityType: "ExchangeIntent",
+              exchangeIntentId: exchangeIntent.id,
+              returnId: returnCase.id,
+              orderId: returnCase.order.id,
+              customerId,
+              itemTitle: returnCase.item.title,
+              alternativeId: alternative.id,
+              alternativeName: alternative.name,
+              alternativePrice: alternative.price,
+              fitScore: alternative.fit,
+              returnRisk: alternative.returnRisk,
+              status: exchangeIntent.status,
+              priceDelta: exchangeIntent.priceDelta,
+              updatedAt: now,
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: {
+              pk: `CUSTOMER#${customerId}`,
+              sk: `ORDER#${returnCase.order.id}#EXCHANGE#${alternative.id}`,
+              entityType: "CustomerOrderLink",
+              customerId,
+              returnId: returnCase.id,
+              orderId: returnCase.order.id,
+              exchangeIntentId: exchangeIntent.id,
+              alternativeId: alternative.id,
+              routeStatus: "exchange#CONNECTED",
+              creditAmount: 2,
+              status: exchangeIntent.status,
+              updatedAt: now,
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  return { mode: "dynamodb", persisted: true, tableName };
+}

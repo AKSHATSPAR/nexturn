@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -11,6 +11,8 @@ import {
   ExternalLink,
   Home,
   Leaf,
+  LogIn,
+  LogOut,
   MessageCircle,
   Package,
   RefreshCcw,
@@ -36,7 +38,12 @@ import {
 } from "./data/returnCase";
 import { formatCurrency, summarizeDecision } from "./lib/decisionEngine";
 import { rankPurchaseFit } from "./lib/purchaseFit";
-import { evaluateScanUpload, lockRoute } from "./services/returnResolutionApi";
+import { initializeAuth, signIn, signOut } from "./services/auth";
+import {
+  connectExchangeToOrder,
+  evaluateScanUpload,
+  lockRoute,
+} from "./services/returnResolutionApi";
 
 const navItems = [
   { id: "home", label: "Home", Icon: Home },
@@ -61,11 +68,65 @@ function StatusIcon({ tone = "green" }) {
   );
 }
 
+function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
+  const session = auth.session;
+  const config = auth.config;
+
+  if (auth.status === "loading") {
+    return (
+      <section className="auth-card" aria-label="Customer account">
+        <span>Customer account</span>
+        <strong>Checking session</strong>
+      </section>
+    );
+  }
+
+  if (session) {
+    return (
+      <section className="auth-card signed-in" aria-label="Customer account">
+        <span>Signed in</span>
+        <strong>{session.user.name}</strong>
+        <small>{session.user.email}</small>
+        <button type="button" onClick={onSignOut}>
+          <LogOut size={14} /> Sign out
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="auth-card" aria-label="Customer account">
+      <span>{config?.enabled ? "Customer account" : "Local demo mode"}</span>
+      <strong>{config?.enabled ? "Sign in to sync" : "Auth off locally"}</strong>
+      {auth.error && <small className="auth-error">{auth.error}</small>}
+      <button type="button" disabled={!config?.enabled} onClick={onSignIn}>
+        <LogIn size={14} /> Sign in
+      </button>
+      <button
+        className="google-button"
+        type="button"
+        disabled={!config?.googleEnabled}
+        title={
+          config?.googleEnabled
+            ? "Sign in with Google"
+            : "Google OAuth credentials are not configured yet"
+        }
+        onClick={onGoogleSignIn}
+      >
+        G Google
+      </button>
+    </section>
+  );
+}
+
 function Sidebar({
   activeView,
+  auth,
   collapsed,
   onNavigate,
-  onOpenProfile,
+  onGoogleSignIn,
+  onSignIn,
+  onSignOut,
   onToggleCollapse,
 }) {
   return (
@@ -104,30 +165,25 @@ function Sidebar({
         ))}
       </nav>
 
-      <div className="credit-card">
-        <span>Green credits balance</span>
-        <strong>
-          <Leaf size={24} /> {returnCase.customer.creditsBalance}
-        </strong>
-        <small>~ {formatCurrency(returnCase.customer.creditsValue)} value</small>
-        <button type="button" onClick={() => onNavigate("wallet")}>
-          View activity
-        </button>
-      </div>
+      <div className="sidebar-footer">
+        <AuthCard
+          auth={auth}
+          onGoogleSignIn={onGoogleSignIn}
+          onSignIn={onSignIn}
+          onSignOut={onSignOut}
+        />
 
-      <button
-        className="profile-card"
-        type="button"
-        aria-label={`Open profile for ${returnCase.customer.name}`}
-        onClick={onOpenProfile}
-      >
-        <img src="/assets/avatars/buyer-rahul.png" alt="" />
-        <div>
-          <strong>{returnCase.customer.name}</strong>
-          <span>{returnCase.customer.email}</span>
+        <div className="credit-card">
+          <span>Green credits balance</span>
+          <strong>
+            <Leaf size={24} /> {returnCase.customer.creditsBalance}
+          </strong>
+          <small>~ {formatCurrency(returnCase.customer.creditsValue)} value</small>
+          <button type="button" onClick={() => onNavigate("wallet")}>
+            View activity
+          </button>
         </div>
-        <ChevronRight size={17} />
-      </button>
+      </div>
     </aside>
   );
 }
@@ -179,6 +235,7 @@ function ReturnHeader({ onBack, onExplainWindow }) {
 
 function ReturnScan({
   activeCase,
+  maxScanStep,
   selectedImage,
   scanStep,
   setScanStep,
@@ -228,13 +285,12 @@ function ReturnScan({
             type="button"
             onClick={() => {
               onImageSelect(image);
-              setScanStep(Math.min(steps.length - 1, index + 1));
             }}
           >
             <img src={image} alt="" />
           </button>
         ))}
-        <button type="button" onClick={() => setScanStep(2)}>
+        <button type="button" onClick={() => onImageSelect(activeCase.item.image)}>
           <img src={activeCase.item.image} alt="" />
           <span className="play-dot">0:18</span>
         </button>
@@ -246,17 +302,26 @@ function ReturnScan({
       </div>
 
       <div className="scan-timeline" aria-label="Scan progress">
-        {steps.map((step, index) => (
-          <button
-            className={index <= scanStep ? "done" : ""}
-            key={step}
-            type="button"
-            onClick={() => setScanStep(index)}
-          >
-            <span />
-            {step}
-          </button>
-        ))}
+        {steps.map((step, index) => {
+          const isUnlocked = index <= maxScanStep;
+          return (
+            <button
+              className={`${index <= maxScanStep ? "done" : ""} ${
+                index === scanStep ? "current" : ""
+              }`}
+              disabled={!isUnlocked}
+              key={step}
+              type="button"
+              aria-current={index === scanStep ? "step" : undefined}
+              onClick={() => {
+                if (isUnlocked) setScanStep(index);
+              }}
+            >
+              <span />
+              {step}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -298,6 +363,7 @@ function GradePanel({ decision, onExplainAi }) {
 function AiAnalysisPanel({ aiAnalysis, media }) {
   const isLive = aiAnalysis?.usedAws;
   const labels = aiAnalysis?.labels ?? [];
+  const ignoredLabels = aiAnalysis?.ignoredLabels ?? [];
 
   return (
     <section className="panel ai-panel">
@@ -319,6 +385,16 @@ function AiAnalysisPanel({ aiAnalysis, media }) {
           ))}
         </div>
       )}
+      {ignoredLabels.length > 0 && (
+        <div className="label-chips muted" aria-label="Ignored image labels">
+          {ignoredLabels.slice(0, 4).map((label) => (
+            <span key={`${label.name}-${label.confidence}`}>
+              Ignored: {label.name} {Math.round(label.confidence)}%
+            </span>
+          ))}
+        </div>
+      )}
+      {aiAnalysis?.gradeImpact && <p className="grade-impact">{aiAnalysis.gradeImpact}</p>}
       <small>
         {media?.persisted
           ? `Image stored in S3 object ${media.objectKey}`
@@ -1038,6 +1114,7 @@ function ReturnsView({
   activeCase,
   aiAnalysis,
   decision,
+  maxScanStep,
   media,
   onExplainAi,
   onImageSelect,
@@ -1077,6 +1154,7 @@ function ReturnsView({
           <div className="analysis-grid">
             <ReturnScan
               activeCase={activeCase}
+              maxScanStep={maxScanStep}
               onImageSelect={onImageSelect}
               onUpload={onUpload}
               scanStep={scanStep}
@@ -1138,7 +1216,7 @@ function DetailRow({ label, value }) {
   );
 }
 
-function ActionDrawer({ drawer, onClose, onNavigate, onRouteSelect }) {
+function ActionDrawer({ drawer, onClose, onConnectExchange, onNavigate, onRouteSelect }) {
   if (!drawer) return null;
 
   const { type, payload } = drawer;
@@ -1267,11 +1345,41 @@ function ActionDrawer({ drawer, onClose, onNavigate, onRouteSelect }) {
           lower-risk certified refurbished choices.
         </p>
         <div className="drawer-actions">
-          <button type="button" onClick={() => onNavigate("orders")}>
+          <button type="button" onClick={() => onConnectExchange(payload)}>
             Connect to order
           </button>
-          <button type="button" onClick={() => onNavigate("returns")}>
+          <button type="button" onClick={() => onRouteSelect("exchange")}>
             Use as exchange match
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  if (type === "exchange-intent") {
+    title = "Exchange connected";
+    body = (
+      <>
+        <DetailList>
+          <DetailRow label="Order ID" value={payload.originalOrderId} />
+          <DetailRow label="Alternative" value={payload.alternativeName} />
+          <DetailRow label="Fit score" value={`${payload.fitScore}%`} />
+          <DetailRow label="Expected return risk" value={`${payload.expectedReturnRisk}%`} />
+          <DetailRow
+            label="Price difference"
+            value={payload.priceDelta <= 0 ? "No upgrade charge" : formatCurrency(payload.priceDelta)}
+          />
+          <DetailRow label="Status" value={payload.status.replaceAll("_", " ")} />
+        </DetailList>
+        <p className="drawer-copy">
+          {payload.customerMessage}
+        </p>
+        <div className="drawer-actions">
+          <button type="button" onClick={() => onRouteSelect("exchange")}>
+            Select exchange route
+          </button>
+          <button type="button" onClick={() => onNavigate("orders")}>
+            View order
           </button>
         </div>
       </>
@@ -1412,11 +1520,18 @@ export function App() {
   const [activeCase, setActiveCase] = useState(returnCase);
   const [activeView, setActiveView] = useState("returns");
   const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [auth, setAuth] = useState({
+    status: "loading",
+    config: null,
+    session: null,
+    error: null,
+  });
   const [decision, setDecision] = useState(initialDecision);
   const [drawer, setDrawer] = useState(null);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [maxScanStep, setMaxScanStep] = useState(0);
   const [media, setMedia] = useState(null);
-  const [scanStep, setScanStep] = useState(1);
+  const [scanStep, setScanStep] = useState(0);
   const [selectedImage, setSelectedImage] = useState(returnCase.item.image);
   const [selectedRouteId, setSelectedRouteId] = useState(initialDecision.recommended.id);
   const [settings, setSettings] = useState({
@@ -1439,6 +1554,23 @@ export function App() {
     decision.routes.find((route) => route.id === selectedRouteId) ??
     decision.recommended;
 
+  useEffect(() => {
+    let isMounted = true;
+    initializeAuth().then((result) => {
+      if (!isMounted) return;
+      setAuth({
+        status: "ready",
+        config: result.config,
+        session: result.session,
+        error: result.error,
+      });
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   function openDrawer(type, payload = {}, extra = {}) {
     setDrawer({ type, payload, ...extra });
   }
@@ -1448,20 +1580,40 @@ export function App() {
     setDrawer(null);
   }
 
+  async function handleSignIn(provider) {
+    try {
+      await signIn(auth.config, provider);
+    } catch (error) {
+      setAuth((current) => ({
+        ...current,
+        status: "ready",
+        error: error.message,
+      }));
+    }
+  }
+
+  function handleSignOut() {
+    signOut(auth.config);
+  }
+
   async function handleRouteSelect(routeId) {
+    const previousRouteId = selectedRouteId;
     setSelectedRouteId(routeId);
     setSyncState({ status: "syncing", message: "Syncing route..." });
 
     try {
       const result = await lockRoute(routeId);
+      setMaxScanStep(3);
+      setScanStep(3);
       setSyncState({
         status: result.persisted ? "synced" : "idle",
         message: result.persisted ? "Synced to AWS route ledger" : result.message,
       });
-    } catch {
+    } catch (error) {
+      setSelectedRouteId(previousRouteId);
       setSyncState({
         status: "error",
-        message: "API unavailable. Decision kept locally.",
+        message: error.message ?? "API unavailable. Decision kept locally.",
       });
     }
   }
@@ -1476,6 +1628,7 @@ export function App() {
       return;
     }
 
+    setMaxScanStep(1);
     setScanStep(1);
     setUploadState({
       status: "syncing",
@@ -1498,6 +1651,7 @@ export function App() {
       }
 
       const usedAws = Boolean(result.aiAnalysis?.usedAws);
+      setMaxScanStep(2);
       setScanStep(2);
       setUploadState({
         status: usedAws ? "synced" : "idle",
@@ -1513,6 +1667,8 @@ export function App() {
           : result.aiAnalysis?.summary ?? "Upload kept locally",
       });
     } catch (error) {
+      setMaxScanStep(0);
+      setScanStep(0);
       setUploadState({
         status: "error",
         title: "Upload failed",
@@ -1521,6 +1677,44 @@ export function App() {
       setSyncState({
         status: "error",
         message: "AI scan unavailable. Existing decision preserved.",
+      });
+    }
+  }
+
+  async function handleConnectExchange(item) {
+    setSyncState({ status: "syncing", message: "Connecting exchange to order..." });
+
+    try {
+      const result = await connectExchangeToOrder(item.id);
+      const priceDelta = Number((item.price - returnCase.item.originalPrice).toFixed(2));
+      const exchangeIntent = {
+        id: result.exchangeIntent?.id ?? `local_exchange_${item.id}`,
+        status: result.exchangeIntent?.status ?? "connected_locally",
+        originalOrderId: result.exchangeIntent?.originalOrderId ?? returnCase.order.id,
+        returnId: result.exchangeIntent?.returnId ?? returnCase.id,
+        alternativeId: result.exchangeIntent?.alternativeId ?? item.id,
+        alternativeName: result.exchangeIntent?.alternativeName ?? item.name,
+        alternativeLabel: result.exchangeIntent?.alternativeLabel ?? item.label,
+        fitScore: result.exchangeIntent?.fitScore ?? item.fit,
+        expectedReturnRisk: result.exchangeIntent?.expectedReturnRisk ?? item.returnRisk,
+        priceDelta: result.exchangeIntent?.priceDelta ?? priceDelta,
+        customerCreditPreview: result.exchangeIntent?.customerCreditPreview ?? 2,
+        customerMessage: result.message,
+      };
+      setSelectedRouteId("exchange");
+      setMaxScanStep(3);
+      setScanStep(3);
+      setSyncState({
+        status: result.persisted ? "synced" : "idle",
+        message: result.persisted
+          ? "Exchange intent synced to AWS"
+          : result.message,
+      });
+      setDrawer({ type: "exchange-intent", payload: exchangeIntent });
+    } catch (error) {
+      setSyncState({
+        status: "error",
+        message: error.message ?? "Exchange connection failed.",
       });
     }
   }
@@ -1542,9 +1736,12 @@ export function App() {
     <div className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <Sidebar
         activeView={activeView}
+        auth={auth}
         collapsed={isSidebarCollapsed}
+        onGoogleSignIn={() => handleSignIn("Google")}
         onNavigate={navigate}
-        onOpenProfile={() => openDrawer("profile")}
+        onSignIn={() => handleSignIn()}
+        onSignOut={handleSignOut}
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
       />
       {activeView === "home" && (
@@ -1565,6 +1762,7 @@ export function App() {
           activeCase={activeCase}
           aiAnalysis={aiAnalysis}
           decision={decision}
+          maxScanStep={maxScanStep}
           media={media}
           onExplainAi={() => openDrawer("ai")}
           onImageSelect={setSelectedImage}
@@ -1624,6 +1822,7 @@ export function App() {
       <ActionDrawer
         drawer={drawer}
         onClose={() => setDrawer(null)}
+        onConnectExchange={handleConnectExchange}
         onNavigate={navigate}
         onRouteSelect={handleRouteSelect}
       />

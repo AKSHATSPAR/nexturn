@@ -6,9 +6,10 @@ import {
   refurbishedAlternatives,
   returnCase,
 } from "../../src/data/returnCase.js";
-import { summarizeDecision } from "../../src/lib/decisionEngine.js";
+import { formatCurrency, summarizeDecision } from "../../src/lib/decisionEngine.js";
 import { analyzeReturnImage } from "../lib/aiImageAnalysis.js";
 import {
+  saveExchangeConnection,
   saveRouteSelection,
   saveScanEvaluation,
 } from "../lib/dynamodbRepository.js";
@@ -16,7 +17,7 @@ import {
 const headers = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "authorization,content-type",
   "content-type": "application/json",
 };
 
@@ -41,13 +42,49 @@ function normalizePath(event) {
   return event.rawPath ?? event.path ?? "/";
 }
 
-function createCasePayload(overrides = {}) {
+function getIdentity(event = {}) {
+  const claims = event.requestContext?.authorizer?.jwt?.claims ?? {};
+  const email = claims.email ?? returnCase.customer.email;
+  const name = claims.name ?? claims.given_name ?? email?.split("@")[0] ?? returnCase.customer.name;
+
+  if (!claims.sub) {
+    return {
+      isAuthenticated: false,
+      customerId: returnCase.customer.id,
+      email,
+      name: returnCase.customer.name,
+    };
+  }
+
+  return {
+    isAuthenticated: true,
+    subject: claims.sub,
+    customerId: `cognito#${claims.sub}`,
+    email,
+    name,
+  };
+}
+
+function caseForIdentity(identity) {
+  return {
+    ...returnCase,
+    customer: {
+      ...returnCase.customer,
+      id: identity.customerId,
+      name: identity.name,
+      email: identity.email,
+    },
+  };
+}
+
+function createCasePayload(overrides = {}, identity = getIdentity()) {
+  const baseCase = caseForIdentity(identity);
   const scan = {
-    ...returnCase.scan,
+    ...baseCase.scan,
     ...(overrides.scan ?? {}),
   };
   const workingCase = {
-    ...returnCase,
+    ...baseCase,
     scan,
   };
   const decision = summarizeDecision(workingCase);
@@ -57,6 +94,11 @@ function createCasePayload(overrides = {}) {
     decision,
     buyerMatches,
     refurbishedAlternatives,
+    identity: {
+      isAuthenticated: identity.isAuthenticated,
+      customerId: identity.customerId,
+      email: identity.email,
+    },
     generatedAt: new Date().toISOString(),
   };
 }
@@ -70,8 +112,8 @@ function mergeInspectionSignals(existingSignals, aiSignals) {
   return [...new Set([...(existingSignals ?? []), ...(aiSignals ?? [])])];
 }
 
-async function selectRoute(routeId) {
-  const payload = createCasePayload();
+async function selectRoute(routeId, event) {
+  const payload = createCasePayload({}, getIdentity(event));
   const selected = payload.decision.routes.find((route) => route.id === routeId);
 
   if (!selected) {
@@ -81,12 +123,12 @@ async function selectRoute(routeId) {
     });
   }
 
-  const persistence = await saveRouteSelection(returnCase, selected);
+  const persistence = await saveRouteSelection(payload.case, selected);
 
   return json(200, {
     selectedRoute: selected,
     passport: {
-      ...returnCase.trustPassport,
+      ...payload.case.trustPassport,
       lockedRoute: selected.shortLabel,
       status: "ready_for_customer_confirmation",
     },
@@ -99,40 +141,56 @@ async function selectRoute(routeId) {
   });
 }
 
-async function evaluateScan(body) {
+async function evaluateScan(body, event) {
+  const identity = getIdentity(event);
+  const customerCase = caseForIdentity(identity);
   const { aiAnalysis, media } = await analyzeReturnImage({
-    returnCase,
+    returnCase: customerCase,
     imageBase64: body.imageBase64,
     mimeType: body.mimeType,
     fileName: body.fileName,
   });
+  const identityMismatch = aiAnalysis.identityStatus === "mismatch";
   const inspectionSignals = mergeInspectionSignals(
-    returnCase.scan.inspectionSignals,
-    aiAnalysis.inspectionSignals,
+    customerCase.scan.inspectionSignals,
+    [
+      ...(aiAnalysis.inspectionSignals ?? []),
+      ...(identityMismatch
+        ? ["Manual review required because the uploaded evidence does not match the expected returned item"]
+        : []),
+    ],
   );
+  const requestedDemandScore = numberOrFallback(body.demandScore, customerCase.scan.demandScore);
+  const requestedFraudRisk = numberOrFallback(body.fraudRisk, customerCase.scan.fraudRisk);
+  const scoredAiAnalysis = {
+    ...aiAnalysis,
+    gradeImpact: identityMismatch
+      ? "The AWS label evidence did not match the expected item category, so NexTurn raised the fraud-risk signal before calculating the condition grade."
+      : "AWS label evidence was used as identity/accessory context. The final grade is still calculated by the explainable condition scorecard.",
+  };
   const payload = createCasePayload({
     scan: {
       imagesUploaded: body.imageBase64
-        ? returnCase.scan.imagesUploaded + 1
-        : returnCase.scan.imagesUploaded,
-      cosmeticWear: numberOrFallback(body.cosmeticWear, returnCase.scan.cosmeticWear),
-      functionalScore: numberOrFallback(body.functionalScore, returnCase.scan.functionalScore),
+        ? customerCase.scan.imagesUploaded + 1
+        : customerCase.scan.imagesUploaded,
+      cosmeticWear: numberOrFallback(body.cosmeticWear, customerCase.scan.cosmeticWear),
+      functionalScore: numberOrFallback(body.functionalScore, customerCase.scan.functionalScore),
       accessoryCompleteness: numberOrFallback(
         body.accessoryCompleteness,
-        returnCase.scan.accessoryCompleteness,
+        customerCase.scan.accessoryCompleteness,
       ),
-      hygieneScore: numberOrFallback(body.hygieneScore, returnCase.scan.hygieneScore),
-      packagingScore: numberOrFallback(body.packagingScore, returnCase.scan.packagingScore),
-      fraudRisk: numberOrFallback(body.fraudRisk, returnCase.scan.fraudRisk),
-      demandScore: numberOrFallback(body.demandScore, returnCase.scan.demandScore),
+      hygieneScore: numberOrFallback(body.hygieneScore, customerCase.scan.hygieneScore),
+      packagingScore: numberOrFallback(body.packagingScore, customerCase.scan.packagingScore),
+      fraudRisk: identityMismatch ? Math.max(requestedFraudRisk, 75) : requestedFraudRisk,
+      demandScore: identityMismatch ? Math.min(requestedDemandScore, 70) : requestedDemandScore,
       inspectionSignals,
     },
-  });
+  }, identity);
   const persistence = await saveScanEvaluation(
     payload.case,
     payload.decision.grade,
     payload.decision.recommended,
-    aiAnalysis,
+    scoredAiAnalysis,
     media,
   );
 
@@ -142,9 +200,48 @@ async function evaluateScan(body) {
     recommendedRoute: payload.decision.recommended,
     routes: payload.decision.routes,
     inspectionSignals: payload.case.scan.inspectionSignals,
-    aiAnalysis,
+    aiAnalysis: scoredAiAnalysis,
     media,
     persistence,
+  });
+}
+
+async function connectExchange(body, event) {
+  const payload = createCasePayload({}, getIdentity(event));
+  const alternative = refurbishedAlternatives.find((item) => item.id === body.alternativeId);
+
+  if (!alternative) {
+    return json(422, {
+      error: "Unsupported exchange alternative",
+      supportedAlternatives: refurbishedAlternatives.map((item) => item.id),
+    });
+  }
+
+  const priceDelta = Number((alternative.price - payload.case.item.originalPrice).toFixed(2));
+  const exchangeIntent = {
+    id: `exchange_${payload.case.id}_${alternative.id}`,
+    status: "connected_to_order",
+    originalOrderId: payload.case.order.id,
+    returnId: payload.case.id,
+    alternativeId: alternative.id,
+    alternativeName: alternative.name,
+    alternativeLabel: alternative.label,
+    fitScore: alternative.fit,
+    expectedReturnRisk: alternative.returnRisk,
+    priceDelta,
+    customerCreditPreview: 2,
+    customerMessage:
+      priceDelta <= 0
+        ? `${alternative.name} is now connected as a lower-risk exchange option for this return.`
+        : `${alternative.name} is connected as an exchange option with a ${formatCurrency(priceDelta)} upgrade difference.`,
+  };
+
+  const persistence = await saveExchangeConnection(payload.case, alternative, exchangeIntent);
+
+  return json(200, {
+    exchangeIntent,
+    persistence,
+    customerMessage: exchangeIntent.customerMessage,
   });
 }
 
@@ -157,7 +254,7 @@ export async function handler(event = {}) {
   const path = normalizePath(event);
 
   if (method === "GET" && path.endsWith("/case")) {
-    return json(200, createCasePayload());
+    return json(200, createCasePayload({}, getIdentity(event)));
   }
 
   if (method === "GET" && path.endsWith("/orders")) {
@@ -185,20 +282,28 @@ export async function handler(event = {}) {
   }
 
   if (method === "GET" && path.endsWith("/impact")) {
-    const payload = createCasePayload();
+    const payload = createCasePayload({}, getIdentity(event));
     return json(200, {
       impact: payload.decision.impact,
       routes: payload.decision.routes,
     });
   }
 
+  if (method === "GET" && path.endsWith("/me")) {
+    return json(200, { identity: getIdentity(event) });
+  }
+
   if (method === "POST" && path.endsWith("/route")) {
     const body = parseBody(event);
-    return selectRoute(body.routeId);
+    return selectRoute(body.routeId, event);
   }
 
   if (method === "POST" && path.endsWith("/scan/evaluate")) {
-    return evaluateScan(parseBody(event));
+    return evaluateScan(parseBody(event), event);
+  }
+
+  if (method === "POST" && path.endsWith("/exchange/connect")) {
+    return connectExchange(parseBody(event), event);
   }
 
   return json(404, {
@@ -210,8 +315,10 @@ export async function handler(event = {}) {
       "GET /wallet",
       "GET /messages",
       "GET /impact",
+      "GET /me",
       "POST /route",
       "POST /scan/evaluate",
+      "POST /exchange/connect",
     ],
   });
 }

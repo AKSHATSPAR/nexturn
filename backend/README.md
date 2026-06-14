@@ -17,12 +17,21 @@ Gateway on AWS Free Tier.
   grade, route ranking, media metadata, and AI evidence.
 - `POST /route` locks the customer-selected route and returns a passport update
   plus green-credit preview.
+- `POST /exchange/connect` links a certified refurbished alternative to the
+  original order as a persisted exchange intent.
+- `GET /me` returns the Cognito-derived customer identity for protected flows.
+
+On AWS, write routes are protected by a Cognito JWT authorizer. Local fixture
+tests can still call the handler directly.
 
 ## Why Deterministic First
 
 The demo should never depend on a vague AI promise. The rules are explicit,
 repeatable, and explainable. Rekognition enriches the scan evidence from a real
 AWS AI call, but the core customer decision remains stable and testable.
+The backend filters Rekognition labels against the expected item category. If an
+upload looks like the wrong product, the scan is marked for manual review and the
+fraud-risk input is raised before grade calculation.
 
 ## Local Invocation Fixtures
 

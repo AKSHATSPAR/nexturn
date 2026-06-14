@@ -14,7 +14,8 @@ customer decision explainable:
 - uploaded return photos are posted to `POST /scan/evaluate`;
 - the Lambda stores the image in a private S3 bucket when deployed;
 - Amazon Rekognition `DetectLabels` analyzes the uploaded image;
-- returned labels and confidence scores are shown in the UI as AI evidence;
+- returned labels are filtered against the expected item category and shown as
+  matched or ignored AI evidence;
 - the condition grade and route ranking remain deterministic so payout and
   sustainability decisions are auditable.
 
@@ -37,9 +38,29 @@ The implemented path already feeds the same engine with AWS AI-derived signals:
 
 1. Store uploaded return images in S3.
 2. Use Rekognition image analysis to detect product/category/scene labels.
-3. Add those labels to the scan evidence shown to the customer.
-4. Persist extracted signals, grade, route decision, media metadata, Trust
+3. Compare labels with the expected returned item category. Relevant labels add
+   identity/accessory context; unrelated labels are shown as ignored evidence.
+4. If uploaded evidence does not match the expected item, raise the fraud-risk
+   signal and route the case toward manual review before calculating the grade.
+5. Persist extracted signals, grade, route decision, media metadata, Trust
    Passport, and green-credit events in DynamoDB.
+
+## How The Grade Is Decided
+
+Rekognition does not decide that an item is A-, B+, or C. The grade comes from a
+weighted scorecard:
+
+- functional score;
+- cosmetic wear;
+- accessory completeness;
+- hygiene score;
+- packaging score;
+- fraud-risk signal;
+- resale demand.
+
+This is why an uploaded image of the wrong product should no longer look like a
+fake successful A- scan. The label mismatch is reflected in the UI, persisted as
+AI evidence, and used to increase the fraud-risk input before the scorecard runs.
 
 ## Why Keep the Rule Layer
 

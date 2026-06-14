@@ -139,9 +139,14 @@ button {
   margin-top: 12px;
 }
 
-.credit-card,
-.profile-card {
+.sidebar-footer {
+  display: grid;
+  gap: 10px;
   margin-top: auto;
+}
+
+.auth-card,
+.credit-card {
   padding: 12px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -149,6 +154,8 @@ button {
   flex-shrink: 0;
 }
 
+.auth-card span,
+.auth-card small,
 .credit-card span,
 .credit-card small {
   display: block;
@@ -156,6 +163,7 @@ button {
   font-size: 12px;
 }
 
+.auth-card strong,
 .credit-card strong {
   display: flex;
   align-items: center;
@@ -165,18 +173,35 @@ button {
   font-size: 22px;
 }
 
+.auth-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.auth-card small {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.auth-card .auth-error {
+  color: var(--danger);
+}
+
 .credit-card svg {
   color: var(--green);
 }
 
-.credit-card button,
-.profile-card button {
+.auth-card button,
+.credit-card button {
   width: 100%;
 }
 
+.auth-card button,
 .credit-card button {
   height: 34px;
-  margin-top: 12px;
+  margin-top: 10px;
   color: #24303a;
   background: #fff;
   border: 1px solid var(--line);
@@ -184,36 +209,27 @@ button {
   font-weight: 650;
 }
 
-.profile-card {
-  display: grid;
-  grid-template-columns: 34px 1fr auto;
+.auth-card button {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 0;
-  width: 100%;
-  color: inherit;
-  text-align: left;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12px;
 }
 
-.profile-card img {
-  width: 34px;
-  height: 34px;
-  object-fit: cover;
-  border-radius: 999px;
+.auth-card .google-button {
+  margin-top: 7px;
+  color: #14202a;
 }
 
-.profile-card strong,
-.profile-card span {
-  display: block;
+.auth-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
-.profile-card strong {
-  font-size: 13px;
-}
-
-.profile-card span {
-  color: var(--muted);
-  font-size: 11px;
+.auth-card.signed-in {
+  background: var(--green-soft);
+  border-color: rgba(15, 141, 70, 0.24);
 }
 
 .sidebar-collapsed .sidebar {
@@ -222,26 +238,18 @@ button {
 
 .sidebar-collapsed .brand span,
 .sidebar-collapsed .nav-item span,
-.sidebar-collapsed .credit-card,
-.sidebar-collapsed .profile-card div,
-.sidebar-collapsed .profile-card svg {
+.sidebar-collapsed .auth-card,
+.sidebar-collapsed .credit-card {
   display: none;
 }
 
 .sidebar-collapsed .brand,
-.sidebar-collapsed .nav-item,
-.sidebar-collapsed .profile-card {
+.sidebar-collapsed .nav-item {
   justify-content: center;
 }
 
 .sidebar-collapsed .nav-item {
   padding: 0;
-}
-
-.sidebar-collapsed .profile-card {
-  display: grid;
-  place-items: center;
-  padding: 8px;
 }
 
 .studio {
@@ -876,6 +884,14 @@ h1 {
   font-size: 11px;
 }
 
+.scan-timeline button:disabled {
+  cursor: not-allowed;
+}
+
+.scan-timeline button:disabled:not(.done) {
+  color: #9aa5ad;
+}
+
 .scan-timeline button::before {
   position: absolute;
   top: 7px;
@@ -903,10 +919,19 @@ h1 {
   color: var(--green-deep);
 }
 
+.scan-timeline .current {
+  font-weight: 800;
+}
+
 .scan-timeline .done span,
 .scan-timeline .done::before {
   background: var(--green);
   border-color: var(--green);
+}
+
+.scan-timeline button:disabled:not(.done) span {
+  background: #f8faf9;
+  border-color: var(--line);
 }
 
 .grade-panel {
@@ -936,6 +961,16 @@ h1 {
   flex-wrap: wrap;
   gap: 7px;
   margin: 0 16px;
+}
+
+.label-chips.muted span {
+  color: #4d5962;
+  background: #eef2f0;
+  border-color: #d9e0dc;
+}
+
+.grade-impact {
+  color: #2f3d47 !important;
 }
 
 .label-chips span {
@@ -1644,9 +1679,8 @@ h1 {
 
   .brand span,
   .nav-item span,
-  .credit-card,
-  .profile-card div,
-  .profile-card svg {
+  .auth-card,
+  .credit-card {
     display: none;
   }
 
@@ -1657,12 +1691,6 @@ h1 {
   .nav-item {
     justify-content: center;
     padding: 0;
-  }
-
-  .profile-card {
-    display: grid;
-    place-items: center;
-    padding: 8px;
   }
 
   .studio-grid {
@@ -1692,6 +1720,14 @@ h1 {
 
   .nav-list {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  .brand span {
+    display: inline;
+  }
+
+  .auth-card {
+    display: grid;
   }
 
   .nav-item {
@@ -1737,6 +1773,7 @@ h1 {
   }
 
   .impact-bar {
+    position: static;
     grid-template-columns: 1fr;
     height: auto;
     padding-block: 10px;

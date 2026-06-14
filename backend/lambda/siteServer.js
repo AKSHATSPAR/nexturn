@@ -32,8 +32,34 @@ function resolveAsset(rawPath = "/") {
   return path.join(distDir, "index.html");
 }
 
+function authConfigResponse() {
+  const body = {
+    enabled: process.env.NEX_TURN_AUTH_ENABLED === "true",
+    googleEnabled: process.env.NEX_TURN_AUTH_GOOGLE_ENABLED === "true",
+    clientId: process.env.NEX_TURN_AUTH_CLIENT_ID ?? "",
+    domain: process.env.NEX_TURN_AUTH_DOMAIN ?? "",
+    redirectUri: process.env.NEX_TURN_AUTH_REDIRECT_URI ?? "",
+    logoutUri: process.env.NEX_TURN_AUTH_LOGOUT_URI ?? "",
+    region: process.env.AWS_REGION ?? "us-east-1",
+  };
+
+  return {
+    statusCode: 200,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(body),
+  };
+}
+
 export async function handler(event = {}) {
-  const assetPath = resolveAsset(event.rawPath ?? event.path ?? "/");
+  const rawPath = event.rawPath ?? event.path ?? "/";
+  if (rawPath === "/auth-config.json") {
+    return authConfigResponse();
+  }
+
+  const assetPath = resolveAsset(rawPath);
   const ext = path.extname(assetPath).toLowerCase();
   const buffer = await readFile(assetPath);
   const isBinary = binaryTypes.has(ext);

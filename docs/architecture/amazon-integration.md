@@ -22,10 +22,13 @@ inputs can replace the seed without changing the customer workflow.
    The deterministic engine remains the final customer-visible scoring layer.
 4. **Route execution**: write resale, exchange, donation, or recycling decisions
    to DynamoDB and expose route queues through the `RouteQueueIndex`.
-5. **Trusted resale**: attach the Trust Passport to renewed or peer-to-peer
+5. **Exchange connection**: when a customer chooses a certified refurbished
+   alternative, create an exchange intent tied to the original order, return ID,
+   customer identity, fit score, return-risk estimate, and price delta.
+6. **Trusted resale**: attach the Trust Passport to renewed or peer-to-peer
    listings so buyers see authenticity, function test, cleaning, and warranty
    status.
-6. **Return prevention**: use the customer's return/fit profile to rank
+7. **Return prevention**: use the customer's return/fit profile to rank
    certified refurbished alternatives before the next purchase.
 
 ## Why This Is Customer-Centric
@@ -36,10 +39,14 @@ inputs can replace the seed without changing the customer workflow.
   another avoidable return.
 - Trust Passport details reduce the buyer anxiety that usually blocks
   second-hand purchases.
+- Authenticated customers get their own order links, scan media, route locks,
+  and exchange intents instead of a shared demo-only state.
 
 ## Free Tier Fit
 
 - HTTP API + Lambda handles prototype traffic without running servers.
 - DynamoDB on-demand keeps low-volume usage inexpensive.
 - S3 is reserved for static assets and future scan media.
+- Cognito Hosted UI avoids building a custom auth system and supports Google
+  federation when OAuth credentials are configured.
 - CDK keeps the stack reproducible and easy to destroy after judging.

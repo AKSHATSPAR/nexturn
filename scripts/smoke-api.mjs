@@ -65,6 +65,25 @@ const calls = [
       body: JSON.stringify({ routeId: "resell" }),
     },
   },
+  {
+    name: "connect exchange",
+    event: {
+      rawPath: "/exchange/connect",
+      requestContext: {
+        authorizer: {
+          jwt: {
+            claims: {
+              sub: "smoke-user",
+              email: "smoke@example.com",
+              name: "Smoke User",
+            },
+          },
+        },
+        http: { method: "POST" },
+      },
+      body: JSON.stringify({ alternativeId: "alt_qc" }),
+    },
+  },
 ];
 
 for (const call of calls) {
@@ -78,6 +97,7 @@ for (const call of calls) {
     body.decision?.recommended?.id ??
       body.recommendedRoute?.id ??
       body.selectedRoute?.id ??
+      body.exchangeIntent?.alternativeId ??
       body.orders?.length ??
       body.buyerMatches?.length ??
       body.events?.length ??
