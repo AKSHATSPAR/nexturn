@@ -253,12 +253,23 @@ function colorFamilyFromText(value = "") {
   )?.[0];
 }
 
+function colorLuminance(hexCode = "") {
+  const match = String(hexCode).match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return null;
+
+  const value = match[1];
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+
+  return Number((0.2126 * red + 0.7152 * green + 0.0722 * blue).toFixed(1));
+}
+
 function normalizeDominantColors(imageProperties = {}) {
-  const colorSources = [
-    ...(imageProperties.DominantColors ?? []),
-    ...(imageProperties.Foreground?.DominantColors ?? []),
-    ...(imageProperties.Background?.DominantColors ?? []),
-  ];
+  const foreground = imageProperties.Foreground?.DominantColors ?? [];
+  const dominant = imageProperties.DominantColors ?? [];
+  const background = imageProperties.Background?.DominantColors ?? [];
+  const colorSources = foreground.length ? foreground : dominant.length ? dominant : background;
   const byFamily = new Map();
 
   colorSources.forEach((color) => {
@@ -273,6 +284,7 @@ function normalizeDominantColors(imageProperties = {}) {
         family,
         name,
         hex: color.HexCode,
+        luminance: colorLuminance(color.HexCode),
         pixelPercent: Number(pixelPercent.toFixed(1)),
       });
     }
@@ -303,6 +315,34 @@ function compareColorEvidence({ returnCase, uploadedColors = [], referenceColors
   const expectedFamilies = expectedColorFamilies(returnCase);
   const uploadedFamilies = new Set(uploadedColors.map((color) => color.family));
   const referenceFamilies = new Set(referenceColors.map((color) => color.family));
+  const lightExpected = expectedFamilies.some((family) => ["silver", "white"].includes(family));
+  const colorFitsExpected = (color) => {
+    if (!expectedFamilies.length) return false;
+    if (lightExpected) {
+      return (
+        ["silver", "white"].includes(color.family) ||
+        (color.family === "gray" && Number(color.luminance ?? 0) >= 145)
+      );
+    }
+    return expectedFamilies.includes(color.family);
+  };
+  const strongUploadedColors = uploadedColors.filter((color) => Number(color.pixelPercent ?? 0) >= 12);
+  const strongExpectedMatches = strongUploadedColors.filter(colorFitsExpected);
+  const dominantUploadedColor = strongUploadedColors[0];
+  const dominantUploadedMismatch =
+    expectedFamilies.length > 0 &&
+    dominantUploadedColor &&
+    !colorFitsExpected(dominantUploadedColor) &&
+    strongExpectedMatches.length === 0;
+  const darkDominanceAgainstLightOrder =
+    lightExpected &&
+    strongUploadedColors.some(
+      (color) =>
+        ["black", "gray"].includes(color.family) &&
+        Number(color.pixelPercent ?? 0) >= 18 &&
+        Number(color.luminance ?? 255) < 120,
+    ) &&
+    strongExpectedMatches.length === 0;
   const expectedMatches = expectedFamilies.filter((family) => uploadedFamilies.has(family));
   const referenceOverlap = [...referenceFamilies].filter((family) => uploadedFamilies.has(family));
   const strongUploadedColor = uploadedColors.find((color) => color.pixelPercent >= 12);
@@ -317,9 +357,14 @@ function compareColorEvidence({ returnCase, uploadedColors = [], referenceColors
     referenceOverlap.length === 0;
 
   let status = "unknown";
-  if (expectedColorMismatch || referenceColorMismatch) {
+  if (
+    expectedColorMismatch ||
+    referenceColorMismatch ||
+    dominantUploadedMismatch ||
+    darkDominanceAgainstLightOrder
+  ) {
     status = "mismatch";
-  } else if (expectedMatches.length || referenceOverlap.length) {
+  } else if (strongExpectedMatches.length || expectedMatches.length || referenceOverlap.length) {
     status = "matched";
   }
 
@@ -330,6 +375,8 @@ function compareColorEvidence({ returnCase, uploadedColors = [], referenceColors
     referenceFamilies: [...referenceFamilies],
     expectedMatches,
     referenceOverlap,
+    dominantUploadedMismatch,
+    darkDominanceAgainstLightOrder,
     expectedColorMismatch,
     referenceColorMismatch,
     uploadedColors,
