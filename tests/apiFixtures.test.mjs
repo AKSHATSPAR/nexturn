@@ -4,6 +4,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handler } from "../backend/lambda/returnResolution.js";
 
+process.env.NEX_TURN_DISABLE_PUBLIC_MARKETPLACE = "true";
+
 async function readFixture(name) {
   const file = await readFile(join("backend", "events", name), "utf8");
   return JSON.parse(file);
@@ -105,4 +107,83 @@ test("customer workspace endpoints return page data", async () => {
     assert.equal(response.statusCode, 200);
     assert.ok(body[key]);
   }
+});
+
+function authenticatedEvent(rawPath, method = "GET", body) {
+  return {
+    rawPath,
+    requestContext: {
+      authorizer: {
+        jwt: {
+          claims: {
+            sub: "c2c-user-123",
+            email: "c2c@example.com",
+            name: "C2C Customer",
+          },
+        },
+      },
+      http: { method },
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  };
+}
+
+test("c2c order history requires auth and returns five proof-backed orders", async () => {
+  const unauthenticated = await handler({
+    rawPath: "/c2c/orders",
+    requestContext: { http: { method: "GET" } },
+  });
+  const response = await handler(authenticatedEvent("/c2c/orders"));
+  const body = JSON.parse(response.body);
+
+  assert.equal(unauthenticated.statusCode, 401);
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.orders.length, 5);
+  assert.equal(body.accountMode, "unified_buyer_seller");
+  assert.ok(body.orders[0].authenticity.purchasedNew);
+});
+
+test("c2c marketplace injects ai-graded listings into a large public feed", async () => {
+  const response = await handler({
+    rawPath: "/c2c/marketplace",
+    requestContext: { http: { method: "GET" } },
+  });
+  const body = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 200);
+  assert.ok(body.heroListings.length >= 3);
+  assert.ok(body.genericItems.length >= 100);
+  assert.equal(body.heroListings[0].badge, "AI Graded & Amazon Verified");
+  assert.match(body.marketplaceRule, /no warehouse/i);
+});
+
+test("c2c cracked screen evaluation produces a low condition grade", async () => {
+  const response = await handler(
+    authenticatedEvent("/c2c/listings/evaluate", "POST", {
+      orderId: "114-8829301-2210045",
+      fileName: "broken-screen-phone.jpg",
+      sellerCondition: { preset: "cracked_screen" },
+    }),
+  );
+  const body = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.listingPreview.grade.grade, "C");
+  assert.ok(body.listingPreview.scorecard.damageFlags.includes("broken_screen"));
+  assert.ok(body.listingPreview.price < body.order.originalPrice * 0.35);
+});
+
+test("c2c checkout simulates payment split and pickup logistics", async () => {
+  const response = await handler(
+    authenticatedEvent("/c2c/checkout", "POST", {
+      listingId: "seed_listing_airpods_max",
+    }),
+  );
+  const body = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.receipt.status, "payment_simulated");
+  assert.equal(body.receipt.deliveryFee, 3.99);
+  assert.equal(body.receipt.logisticsStatus, "pickup_scheduled");
+  assert.match(body.customerMessage, /seller/i);
 });

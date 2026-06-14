@@ -1,92 +1,65 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
-  Bell,
-  Check,
-  ChevronDown,
+  BadgeCheck,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
-  ClipboardCheck,
-  ExternalLink,
+  CircleDollarSign,
   Home,
   Leaf,
   LogIn,
   LogOut,
-  MessageCircle,
-  Package,
-  RefreshCcw,
-  Repeat2,
+  PackageCheck,
+  PackageOpen,
+  ReceiptText,
   Recycle,
   Search,
-  Settings as SettingsIcon,
+  Settings,
   ShieldCheck,
   ShoppingBag,
-  Sparkles,
   Store,
   Upload,
-  WalletCards,
   X,
 } from "lucide-react";
-import {
-  buyerMatches,
-  creditEvents,
-  customerMessages,
-  orderHistory,
-  refurbishedAlternatives,
-  returnCase,
-} from "./data/returnCase";
-import { formatCurrency, summarizeDecision } from "./lib/decisionEngine";
-import { rankPurchaseFit } from "./lib/purchaseFit";
 import { initializeAuth, signIn, signOut } from "./services/auth";
 import {
-  connectExchangeToOrder,
-  evaluateScanUpload,
-  lockRoute,
+  checkoutC2CListing,
+  createC2CListing,
+  evaluateC2CListingUpload,
+  fetchC2CMarketplace,
+  fetchC2COrders,
 } from "./services/returnResolutionApi";
+import { conditionPresets } from "./data/c2cCommerce";
+import { formatMarketplaceCurrency } from "./lib/c2cCommerce";
 
 const navItems = [
-  { id: "home", label: "Home", Icon: Home },
-  { id: "orders", label: "Orders", Icon: ShoppingBag },
-  { id: "returns", label: "Returns hub", Icon: RefreshCcw },
-  { id: "resale", label: "Resale dashboard", Icon: Store },
-  { id: "impact", label: "Green impact", Icon: Leaf },
-  { id: "wallet", label: "Credits wallet", Icon: WalletCards },
-  { id: "messages", label: "Messages", Icon: MessageCircle },
-  { id: "settings", label: "Settings", Icon: SettingsIcon },
+  { id: "home", label: "Overview", Icon: Home },
+  { id: "sell", label: "Sell / Return items", Icon: PackageOpen },
+  { id: "marketplace", label: "Buy / Marketplace", Icon: Store },
+  { id: "listings", label: "My listings", Icon: ReceiptText },
+  { id: "impact", label: "Impact", Icon: Leaf },
+  { id: "settings", label: "Settings", Icon: Settings },
 ];
 
 function Badge({ children, tone = "green" }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
-function StatusIcon({ tone = "green" }) {
-  return (
-    <span className={`status-icon ${tone}`}>
-      <Check size={13} strokeWidth={2.4} />
-    </span>
-  );
-}
-
 function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
-  const session = auth.session;
-  const config = auth.config;
-
   if (auth.status === "loading") {
     return (
       <section className="auth-card" aria-label="Customer account">
-        <span>Customer account</span>
+        <span>Unified account</span>
         <strong>Checking session</strong>
       </section>
     );
   }
 
-  if (session) {
+  if (auth.session) {
     return (
       <section className="auth-card signed-in" aria-label="Customer account">
-        <span>Signed in</span>
-        <strong>{session.user.name}</strong>
-        <small>{session.user.email}</small>
+        <span>Buyer and seller</span>
+        <strong>{auth.session.user.name}</strong>
+        <small>{auth.session.user.email}</small>
         <button type="button" onClick={onSignOut}>
           <LogOut size={14} /> Sign out
         </button>
@@ -96,21 +69,16 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
 
   return (
     <section className="auth-card" aria-label="Customer account">
-      <span>{config?.enabled ? "Customer account" : "Local demo mode"}</span>
-      <strong>{config?.enabled ? "Sign in to sync" : "Auth off locally"}</strong>
+      <span>{auth.config?.enabled ? "Unified account" : "Auth unavailable"}</span>
+      <strong>Sign in to buy or sell</strong>
       {auth.error && <small className="auth-error">{auth.error}</small>}
-      <button type="button" disabled={!config?.enabled} onClick={onSignIn}>
+      <button type="button" disabled={!auth.config?.enabled} onClick={onSignIn}>
         <LogIn size={14} /> Sign in
       </button>
       <button
         className="google-button"
         type="button"
-        disabled={!config?.googleEnabled}
-        title={
-          config?.googleEnabled
-            ? "Sign in with Google"
-            : "Google OAuth credentials are not configured yet"
-        }
+        disabled={!auth.config?.googleEnabled}
         onClick={onGoogleSignIn}
       >
         G Google
@@ -123,8 +91,8 @@ function Sidebar({
   activeView,
   auth,
   collapsed,
-  onNavigate,
   onGoogleSignIn,
+  onNavigate,
   onSignIn,
   onSignOut,
   onToggleCollapse,
@@ -132,12 +100,12 @@ function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="brand">
+        <button className="brand brand-button" type="button" onClick={() => onNavigate("home")}>
           <div className="brand-mark">
             <Recycle size={22} strokeWidth={2.7} />
           </div>
           <span>NexTurn</span>
-        </div>
+        </button>
         <button
           className="sidebar-toggle"
           type="button"
@@ -149,17 +117,15 @@ function Sidebar({
       </div>
 
       <nav className="nav-list" aria-label="Primary navigation">
-        {navItems.map(({ id, label, Icon }, index) => (
+        {navItems.map(({ id, label, Icon }) => (
           <button
-            className={`nav-item ${activeView === id ? "active" : ""} ${
-              index === 6 ? "nav-spaced" : ""
-            }`}
-            key={label}
+            className={`nav-item ${activeView === id ? "active" : ""}`}
+            key={id}
             title={collapsed ? label : undefined}
             type="button"
             onClick={() => onNavigate(id)}
           >
-            <Icon size={18} strokeWidth={2.05} />
+            <Icon size={18} />
             <span>{label}</span>
           </button>
         ))}
@@ -172,571 +138,35 @@ function Sidebar({
           onSignIn={onSignIn}
           onSignOut={onSignOut}
         />
-
-        <div className="credit-card">
-          <span>Green credits balance</span>
+        <section className="credit-card">
+          <span>C2C rule</span>
           <strong>
-            <Leaf size={24} /> {returnCase.customer.creditsBalance}
+            <PackageCheck size={22} /> No warehouse
           </strong>
-          <small>~ {formatCurrency(returnCase.customer.creditsValue)} value</small>
-          <button type="button" onClick={() => onNavigate("wallet")}>
-            View activity
-          </button>
-        </div>
+          <small>Seller keeps item at home until buyer checkout.</small>
+        </section>
       </div>
     </aside>
   );
 }
 
-function ConnectedOrder({ onOpenOrders }) {
+function PageHeader({ eyebrow, title, description, action }) {
   return (
-    <section className="connected-order" aria-label="Connected order">
-      <div className="order-icon">
-        <Package size={20} />
-      </div>
-      <div className="order-copy">
-        <strong>{returnCase.order.channel}</strong>
-        <span>
-          Order # {returnCase.order.id} <i /> {returnCase.order.orderedOn} <i />{" "}
-          {returnCase.order.itemCount} item <i />{" "}
-          {formatCurrency(returnCase.order.subtotal)}
-        </span>
-      </div>
-      <button type="button" onClick={onOpenOrders}>
-        View order <ExternalLink size={15} />
-      </button>
-    </section>
-  );
-}
-
-function ReturnHeader({ onBack, onExplainWindow }) {
-  return (
-    <header className="return-header">
+    <header className="c2c-page-header">
       <div>
-        <button className="back-link" type="button" onClick={onBack}>
-          <ArrowLeft size={16} /> Back to returns hub
-        </button>
-        <h1>{returnCase.item.title}</h1>
-        <p>
-          {returnCase.item.brandLine} <span /> {returnCase.item.variant}
-        </p>
-        <strong>{formatCurrency(returnCase.item.originalPrice)}</strong>
+        <span>{eyebrow}</span>
+        <h1>{title}</h1>
+        <p>{description}</p>
       </div>
-      <div className="return-status">
-        <Badge>{returnCase.status}</Badge>
-        <button className="inline-help" type="button" onClick={onExplainWindow}>
-          Return window closes in {returnCase.returnWindowDays} days{" "}
-          <CircleHelp size={15} />
-        </button>
-      </div>
+      {action}
     </header>
   );
 }
 
-function ReturnScan({
-  activeCase,
-  maxScanStep,
-  selectedImage,
-  scanStep,
-  setScanStep,
-  onImageSelect,
-  onUpload,
-  uploadState,
-}) {
-  const fileInputRef = useRef(null);
-  const steps = ["Received", "Scanning", "Review", "Passport"];
-
-  function handleFileChange(event) {
-    const file = event.target.files?.[0];
-    if (file) onUpload(file);
-    event.target.value = "";
-  }
-
+function MetricCard({ label, value, detail, Icon = BadgeCheck }) {
   return (
-    <section className="panel scan-panel">
-      <div className="panel-heading">
-        <h2>Return scan</h2>
-        <button
-          type="button"
-          disabled={uploadState.status === "syncing"}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload size={16} />
-          {uploadState.status === "syncing" ? "Analyzing" : "Upload"}
-        </button>
-        <input
-          ref={fileInputRef}
-          className="scan-upload-input"
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileChange}
-        />
-      </div>
-
-      <div className="product-frame">
-        <img src={selectedImage} alt={activeCase.item.title} />
-      </div>
-
-      <div className="thumb-row">
-        {activeCase.item.gallery.map((image, index) => (
-          <button
-            className={selectedImage === image ? "selected" : ""}
-            key={image}
-            type="button"
-            onClick={() => {
-              onImageSelect(image);
-            }}
-          >
-            <img src={image} alt="" />
-          </button>
-        ))}
-        <button type="button" onClick={() => onImageSelect(activeCase.item.image)}>
-          <img src={activeCase.item.image} alt="" />
-          <span className="play-dot">0:18</span>
-        </button>
-      </div>
-
-      <div className="upload-state" data-state={uploadState.status}>
-        <strong>{uploadState.title}</strong>
-        <span>{uploadState.message}</span>
-      </div>
-
-      <div className="scan-timeline" aria-label="Scan progress">
-        {steps.map((step, index) => {
-          const isUnlocked = index <= maxScanStep;
-          return (
-            <button
-              className={`${index <= maxScanStep ? "done" : ""} ${
-                index === scanStep ? "current" : ""
-              }`}
-              disabled={!isUnlocked}
-              key={step}
-              type="button"
-              aria-current={index === scanStep ? "step" : undefined}
-              onClick={() => {
-                if (isUnlocked) setScanStep(index);
-              }}
-            >
-              <span />
-              {step}
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function GradePanel({ decision, onExplainAi }) {
-  return (
-    <section className="panel grade-panel">
-      <div className="panel-heading">
-        <h2>
-          AI condition grade
-          <button className="mini-icon-button" type="button" onClick={onExplainAi}>
-            <CircleHelp size={15} />
-          </button>
-        </h2>
-        <Badge>{decision.grade.confidence}</Badge>
-      </div>
-      <div className="grade-body">
-        <div>
-          <strong>{decision.grade.grade}</strong>
-          <span>{decision.grade.label}</span>
-          <p>{decision.grade.summary}</p>
-        </div>
-      </div>
-      <div className="grade-scale">
-        <span>D</span>
-        <span>C</span>
-        <span>B</span>
-        <span>A</span>
-        <span>A+</span>
-        <b style={{ left: `${Math.max(6, Math.min(94, decision.grade.score - 8))}%` }}>
-          {decision.grade.grade}
-        </b>
-      </div>
-    </section>
-  );
-}
-
-function AiAnalysisPanel({ aiAnalysis, media }) {
-  const isLive = aiAnalysis?.usedAws;
-  const labels = aiAnalysis?.labels ?? [];
-  const ignoredLabels = aiAnalysis?.ignoredLabels ?? [];
-
-  return (
-    <section className="panel ai-panel">
-      <div className="panel-heading">
-        <h2>
-          <Sparkles size={17} /> AI evidence
-        </h2>
-        <Badge tone={isLive ? "green" : "neutral"}>
-          {isLive ? "AWS AI live" : aiAnalysis?.mode ?? "Ready"}
-        </Badge>
-      </div>
-      <p>{aiAnalysis?.summary ?? "Upload a return photo to run AWS Rekognition."}</p>
-      {labels.length > 0 && (
-        <div className="label-chips" aria-label="Detected image labels">
-          {labels.slice(0, 6).map((label) => (
-            <span key={`${label.name}-${label.confidence}`}>
-              {label.name} {Math.round(label.confidence)}%
-            </span>
-          ))}
-        </div>
-      )}
-      {ignoredLabels.length > 0 && (
-        <div className="label-chips muted" aria-label="Ignored image labels">
-          {ignoredLabels.slice(0, 4).map((label) => (
-            <span key={`${label.name}-${label.confidence}`}>
-              Ignored: {label.name} {Math.round(label.confidence)}%
-            </span>
-          ))}
-        </div>
-      )}
-      {aiAnalysis?.gradeImpact && <p className="grade-impact">{aiAnalysis.gradeImpact}</p>}
-      <small>
-        {media?.persisted
-          ? `Image stored in S3 object ${media.objectKey}`
-          : media?.message ?? "No scan image has been persisted yet."}
-      </small>
-    </section>
-  );
-}
-
-function SignalCards({ scan }) {
-  const visibleSignals = scan.inspectionSignals.slice(0, 4);
-
-  return (
-    <div className="signal-grid">
-      <section className="panel mini-panel">
-        <h3>Defects</h3>
-        <p>
-          <StatusIcon /> No major defects found
-        </p>
-        {visibleSignals.slice(0, 2).map((signal) => (
-          <span key={signal}>{signal}</span>
-        ))}
-      </section>
-      <section className="panel mini-panel">
-        <h3>Accessories</h3>
-        <p>{scan.accessoryCompleteness === 100 ? "3 of 3 included" : "Needs check"}</p>
-        {["USB-C charging cable", "Audio cable", "Carrying case"].map((item) => (
-          <span className="check-row" key={item}>
-            <StatusIcon /> {item}
-          </span>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function RouteCard({ route, isActive, onSelect, onOpenDetails }) {
-  const iconMap = {
-    resell: Leaf,
-    exchange: Repeat2,
-    donate: ShieldCheck,
-    recycle: Recycle,
-  };
-  const Icon = iconMap[route.id] ?? Sparkles;
-
-  return (
-    <button
-      className={`route-card ${isActive ? "active" : ""}`}
-      data-testid={`route-${route.id}`}
-      aria-pressed={isActive}
-      type="button"
-      onClick={() => {
-        onSelect(route.id);
-        onOpenDetails(route);
-      }}
-    >
-      <div className="route-title">
-        <span>
-          <Icon size={18} /> {route.title}
-        </span>
-        {route.isRecommended && <Badge>Recommended</Badge>}
-      </div>
-      <p>{route.description}</p>
-      <strong>
-        {route.payout > 0 ? formatCurrency(route.payout) : "--"}
-        {route.greenCredits > 0 && <em>+ {route.greenCredits.toFixed(2)} credits</em>}
-      </strong>
-      <small>{route.paymentTime} payment path</small>
-      <span className="route-reason">{route.customerReason}</span>
-      <span className="route-cta">{route.cta}</span>
-    </button>
-  );
-}
-
-function NextBestAction({ routes, selectedRouteId, onSelect, onOpenRoute }) {
-  return (
-    <section className="panel next-action">
-      <div className="panel-heading">
-        <h2>
-          <Sparkles size={18} /> Next best action
-        </h2>
-      </div>
-      <div className="route-grid">
-        {routes.map((route) => (
-          <RouteCard
-            isActive={route.id === selectedRouteId}
-            key={route.id}
-            onOpenDetails={onOpenRoute}
-            onSelect={onSelect}
-            route={route}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RouteComparison({ routes, selectedRouteId, onSelect, onOpenRoute }) {
-  return (
-    <section className="panel comparison">
-      <h2>Route comparison</h2>
-      <div className="comparison-table" role="table" aria-label="Route comparison">
-        <div className="comparison-row header" role="row">
-          <span>Option</span>
-          <span>Payout / Value</span>
-          <span>Green credits</span>
-          <span>Payment time</span>
-          <span>Convenience</span>
-          <span>Impact</span>
-        </div>
-        {routes.map((route) => (
-          <button
-            className={`comparison-row ${route.id === selectedRouteId ? "selected" : ""}`}
-            data-testid={`comparison-${route.id}`}
-            aria-pressed={route.id === selectedRouteId}
-            key={route.id}
-            type="button"
-            onClick={() => {
-              onSelect(route.id);
-              onOpenRoute(route);
-            }}
-          >
-            <span>
-              <i /> {route.title}
-            </span>
-            <span>{route.payout > 0 ? formatCurrency(route.payout) : "--"}</span>
-            <span>
-              {route.greenCredits > 0 ? route.greenCredits.toFixed(2) : "--"}
-            </span>
-            <span>{route.paymentTime}</span>
-            <span>{route.convenience}</span>
-            <span>
-              {route.impact} <Leaf size={13} />
-            </span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function MatchRail({
-  decision,
-  selectedRouteId,
-  onCompare,
-  onOpenAlternative,
-  onOpenBuyer,
-  onOpenBuyerList,
-  onOpenPassport,
-}) {
-  const fitRanking = rankPurchaseFit(refurbishedAlternatives, returnCase.customer);
-
-  return (
-    <aside className="right-rail">
-      <section className="panel match-panel">
-        <div className="panel-heading">
-          <h2>
-            <Search size={17} /> Best matches for your item
-          </h2>
-        </div>
-        <div className="match-list">
-          {buyerMatches.slice(0, 3).map((buyer, index) => (
-            <button
-              className={index === 0 ? "selected" : ""}
-              key={buyer.id}
-              type="button"
-              onClick={() => onOpenBuyer(buyer)}
-            >
-              <img src={buyer.avatar} alt="" />
-              <span>
-                <strong>{buyer.name}</strong>
-                <small>
-                  {buyer.positiveRate}% positive · {buyer.reviews.toLocaleString()} reviews
-                </small>
-                <em>{buyer.reason}</em>
-              </span>
-              <b>
-                {formatCurrency(buyer.offer)}
-                <small>+ {formatCurrency(buyer.credits)} credits</small>
-              </b>
-              <ChevronRight size={16} />
-            </button>
-          ))}
-        </div>
-        <button className="text-button" type="button" onClick={onOpenBuyerList}>
-          View more buyers (8+) <ChevronDown size={15} />
-        </button>
-      </section>
-
-      <section className="panel alternatives-panel">
-        <div className="panel-heading">
-          <h2>
-            <RefreshCcw size={17} /> Refurbished alternatives
-          </h2>
-        </div>
-        {refurbishedAlternatives.map((item) => (
-          <button
-            className="alternative-row"
-            key={item.id}
-            type="button"
-            onClick={() => onOpenAlternative(item)}
-          >
-            <img src={item.image} alt="" />
-            <span>
-              <strong>{item.name}</strong>
-              <small>{item.label}</small>
-            </span>
-            <b>
-              {formatCurrency(item.price)}
-              <small>{item.condition}</small>
-            </b>
-            <ChevronRight size={16} />
-          </button>
-        ))}
-        <button
-          className="text-button"
-          type="button"
-          onClick={() => onOpenAlternative(refurbishedAlternatives[0])}
-        >
-          View more alternatives <ChevronRight size={15} />
-        </button>
-      </section>
-
-      <PurchaseFitPanel fitRanking={fitRanking} onCompare={onCompare} />
-
-      <TrustPassport
-        decision={decision}
-        onOpenPassport={onOpenPassport}
-        selectedRouteId={selectedRouteId}
-      />
-    </aside>
-  );
-}
-
-function PurchaseFitPanel({ fitRanking, onCompare }) {
-  const bestFit = fitRanking[0];
-
-  return (
-    <section className="panel fit-panel">
-      <div className="panel-heading">
-        <h2>
-          <ClipboardCheck size={18} /> Purchase fit check
-        </h2>
-      </div>
-      <div className="fit-score">
-        <strong>{bestFit.confidence}%</strong>
-        <span>{bestFit.recommendation}</span>
-      </div>
-      <p>
-        {bestFit.name} stays under budget, matches over-ear preference, and has{" "}
-        {bestFit.returnRisk}% predicted return risk.
-      </p>
-      <button type="button" onClick={onCompare}>
-        Compare with new
-      </button>
-    </section>
-  );
-}
-
-function TrustPassport({ decision, selectedRouteId, onOpenPassport }) {
-  const activeRoute =
-    decision.routes.find((route) => route.id === selectedRouteId) ?? decision.recommended;
-
-  return (
-    <section className="panel passport-panel">
-      <div className="panel-heading">
-        <h2>
-          <ShieldCheck size={18} /> Trust Passport
-        </h2>
-      </div>
-      <p>Verified return</p>
-      <div className="passport-checks">
-        {decision.passportChecks.map(([label, value]) => (
-          <div key={label}>
-            <span>{label}</span>
-            <strong>
-              {value} <StatusIcon tone={value === "Not applicable" ? "gray" : "green"} />
-            </strong>
-          </div>
-        ))}
-      </div>
-      <div className="passport-result">
-        <span>Route locked</span>
-        <strong>{activeRoute.shortLabel}</strong>
-      </div>
-      <footer>
-        <span>ID: {returnCase.trustPassport.id}</span>
-        <button type="button" onClick={onOpenPassport}>
-          View details <ExternalLink size={14} />
-        </button>
-      </footer>
-    </section>
-  );
-}
-
-function ImpactBar({ decision, selectedRoute, syncState }) {
-  return (
-    <section className="impact-bar">
-      <span>
-        <Leaf size={17} />
-        You are earning {selectedRoute.greenCredits.toFixed(2)} green credits with this
-        route.
-      </span>
-      <span>
-        {decision.impact.emissionsKgSaved} kg CO2e saved ·{" "}
-        {decision.impact.landfillAvoidedGrams} g kept out of disposal ·{" "}
-        {decision.impact.nextOwnerMatchRate}% match confidence
-      </span>
-      <span className={`sync-state ${syncState.status}`}>{syncState.message}</span>
-    </section>
-  );
-}
-
-function TopActions({ onNavigate, onOpenHelp, onOpenNotifications }) {
-  return (
-    <div className="top-actions" aria-label="Notifications and help">
-      <button type="button" aria-label="Open messages" onClick={onOpenNotifications}>
-        <Bell size={18} />
-      </button>
-      <button type="button" aria-label="Open AI help" onClick={onOpenHelp}>
-        <CircleHelp size={18} />
-      </button>
-      <button type="button" aria-label="Open settings" onClick={() => onNavigate("settings")}>
-        <SettingsIcon size={18} />
-      </button>
-    </div>
-  );
-}
-
-function PageHeader({ eyebrow, title, description }) {
-  return (
-    <header className="page-header">
-      <span>{eyebrow}</span>
-      <h1>{title}</h1>
-      <p>{description}</p>
-    </header>
-  );
-}
-
-function MetricCard({ label, value, detail }) {
-  return (
-    <section className="panel metric-card">
+    <section className="panel c2c-metric">
+      <Icon size={20} />
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
@@ -744,815 +174,646 @@ function MetricCard({ label, value, detail }) {
   );
 }
 
-function HomeView({ decision, onNavigate, onOpenAlternative, onOpenHelp, onOpenNotifications }) {
-  const fitRanking = rankPurchaseFit(refurbishedAlternatives, returnCase.customer);
-  const bestFit = fitRanking[0];
+function SignInGate({ title, detail }) {
+  return (
+    <section className="panel sign-in-gate">
+      <ShieldCheck size={24} />
+      <h2>{title}</h2>
+      <p>{detail}</p>
+      <small>Google sign-in or email sign-in unlocks the same Buyer + Seller account.</small>
+    </section>
+  );
+}
+
+function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
+  const activeHeroCount = marketplace.heroListings.length;
 
   return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
+    <main className="studio workspace-page c2c-workspace">
       <PageHeader
-        eyebrow="Customer command center"
-        title={`Welcome back, ${returnCase.customer.name.split(" ")[0]}`}
-        description="Your open return, second-life options, and low-return recommendations are ready."
+        eyebrow="Direct customer-to-customer commerce"
+        title="Returned items stay with people, not warehouses"
+        description="NexTurn uses Amazon order history as authenticity proof, grades the real item photo with AWS AI evidence, then lists it directly for another customer."
       />
       <div className="metric-grid">
         <MetricCard
-          label="Open return"
-          value={decision.recommended.shortLabel}
-          detail={`${decision.grade.grade} grade · ${decision.recommended.greenCredits.toFixed(2)} credits`}
+          label="Unified account"
+          value={isSignedIn ? "Active" : "Locked"}
+          detail="One account can sell and buy"
+          Icon={ShieldCheck}
         />
         <MetricCard
-          label="Best buyer offer"
-          value={formatCurrency(buyerMatches[0].offer)}
-          detail={`${buyerMatches[0].positiveRate}% positive nearby match`}
+          label="Order proof"
+          value={`${orders.length || 5} items`}
+          detail="Fake Amazon history for demo authenticity"
+          Icon={PackageCheck}
         />
         <MetricCard
-          label="Next purchase fit"
-          value={`${bestFit.confidence}%`}
-          detail={`${bestFit.name} · ${bestFit.returnRisk}% return risk`}
+          label="Marketplace"
+          value={`${activeHeroCount}+ hero`}
+          detail="AI graded listings injected above generic feed"
+          Icon={Store}
         />
       </div>
-      <div className="workspace-grid">
-        <section className="panel action-panel">
-          <h2>Priority actions</h2>
-          <button type="button" onClick={() => onNavigate("returns")}>
-            Resolve headphone return <ChevronRight size={16} />
-          </button>
-          <button type="button" onClick={() => onNavigate("resale")}>
-            Review buyer matches <ChevronRight size={16} />
-          </button>
-          <button type="button" onClick={() => onNavigate("wallet")}>
-            Open green credits wallet <ChevronRight size={16} />
-          </button>
-        </section>
-        <section className="panel list-panel">
-          <h2>Return prevention</h2>
-          {fitRanking.map((item) => (
-            <button
-              className="list-row list-row-button"
-              key={item.id}
-              type="button"
-              onClick={() => onOpenAlternative(item)}
-            >
-              <img src={item.image} alt="" />
-              <span>
-                <strong>{item.name}</strong>
-                <small>{item.recommendation}</small>
-              </span>
-              <b>{item.confidence}%</b>
-            </button>
-          ))}
-        </section>
+      <div className="c2c-journey">
+        <button type="button" onClick={() => onNavigate("sell")}>
+          <PackageOpen size={24} />
+          <span>
+            <strong>Sell from order history</strong>
+            <small>Pick a verified purchase, upload the real item, get grade and price.</small>
+          </span>
+          <ChevronRight size={18} />
+        </button>
+        <button type="button" onClick={() => onNavigate("marketplace")}>
+          <ShoppingBag size={24} />
+          <span>
+            <strong>Buy AI-graded second-life items</strong>
+            <small>See proof, scorecard, seller-at-home logistics, and checkout split.</small>
+          </span>
+          <ChevronRight size={18} />
+        </button>
       </div>
     </main>
   );
 }
 
-function OrdersView({ onNavigate, onOpenOrder, onOpenHelp, onOpenNotifications }) {
+function OrderCard({ isSelected, onSelect, order }) {
   return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Orders"
-        title="Connected purchases"
-        description="Recent orders with return, resale, and fit-prevention actions."
-      />
-      <section className="panel table-panel">
-        {orderHistory.map((order) => (
-          <button
-            className="order-row"
-            key={order.id}
-            type="button"
-            onClick={() => {
-              if (order.id === returnCase.order.id) {
-                onNavigate("returns");
-              } else {
-                onOpenOrder(order);
-              }
-            }}
-          >
-            <span>
-              <strong>{order.title}</strong>
-              <small>Order # {order.id}</small>
-            </span>
-            <span>{order.date}</span>
-            <Badge tone={order.status === "Delivered" ? "neutral" : "green"}>
-              {order.status}
-            </Badge>
-            <b>{formatCurrency(order.value)}</b>
-            <em>{order.action}</em>
-          </button>
-        ))}
-      </section>
-    </main>
+    <button
+      className={`order-proof-card ${isSelected ? "selected" : ""}`}
+      type="button"
+      onClick={() => onSelect(order)}
+    >
+      <img src={order.image} alt="" />
+      <span>
+        <strong>{order.title}</strong>
+        <small>
+          Order # {order.id} · {order.purchaseDate}
+        </small>
+        <em>{order.proofNote}</em>
+      </span>
+      <b>{formatMarketplaceCurrency(order.originalPrice)}</b>
+    </button>
   );
 }
 
-function ResaleDashboardView({
-  onNavigate,
-  onOpenBuyer,
-  onOpenHelp,
-  onOpenNotifications,
-}) {
+function ConditionSelector({ value, onChange }) {
   return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Resale dashboard"
-        title="Second-life demand queue"
-        description="Buyer demand, trust status, and route readiness for usable returned items."
-      />
-      <div className="metric-grid">
-        <MetricCard label="Ready to resell" value="1 item" detail="A- grade · high confidence" />
-        <MetricCard
-          label="Top offer"
-          value={formatCurrency(buyerMatches[0].offer)}
-          detail="2-3 day payout"
-        />
-        <MetricCard label="Trust passport" value="Verified" detail="90-day warranty signal" />
-      </div>
-      <section className="panel list-panel">
-        <h2>Buyer matches</h2>
-        {buyerMatches.map((buyer) => (
-          <button
-            className="list-row list-row-button"
-            key={buyer.id}
-            type="button"
-            onClick={() => onOpenBuyer(buyer)}
-          >
-            <img src={buyer.avatar} alt="" />
-            <span>
-              <strong>{buyer.name}</strong>
-              <small>{buyer.reason}</small>
-            </span>
-            <b>{formatCurrency(buyer.offer)}</b>
-          </button>
-        ))}
-      </section>
-    </main>
-  );
-}
-
-function GreenImpactView({
-  decision,
-  onNavigate,
-  onOpenHelp,
-  onOpenNotifications,
-  onOpenRoute,
-}) {
-  return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Green impact"
-        title="Customer impact ledger"
-        description="A practical sustainability view tied to decisions the customer can actually make."
-      />
-      <div className="metric-grid">
-        <MetricCard
-          label="CO2e avoided"
-          value={`${decision.impact.emissionsKgSaved} kg`}
-          detail="From resale route estimate"
-        />
-        <MetricCard
-          label="Waste avoided"
-          value={`${decision.impact.landfillAvoidedGrams} g`}
-          detail="Kept out of disposal"
-        />
-        <MetricCard
-          label="Match confidence"
-          value={`${decision.impact.nextOwnerMatchRate}%`}
-          detail="Demand-backed second life"
-        />
-      </div>
-      <section className="panel route-impact-panel">
-        <h2>Impact by route</h2>
-        {decision.routes.map((route) => (
-          <button
-            className="impact-row impact-row-button"
-            key={route.id}
-            type="button"
-            onClick={() => onOpenRoute(route)}
-          >
-            <span>
-              <strong>{route.title}</strong>
-              <small>{route.customerReason}</small>
-            </span>
-            <b>{route.greenCredits.toFixed(2)} credits</b>
-            <em>{route.impact} impact</em>
-          </button>
-        ))}
-      </section>
-    </main>
-  );
-}
-
-function CreditsWalletView({ onNavigate, onOpenCredit, onOpenHelp, onOpenNotifications }) {
-  return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Credits wallet"
-        title={`${returnCase.customer.creditsBalance} green credits`}
-        description={`Estimated value ${formatCurrency(returnCase.customer.creditsValue)} from verified lower-waste choices.`}
-      />
-      <section className="panel list-panel">
-        <h2>Recent credit activity</h2>
-        {creditEvents.map((event) => (
-          <button
-            className="credit-row credit-row-button"
-            key={event.id}
-            type="button"
-            onClick={() => onOpenCredit(event)}
-          >
-            <span>
-              <strong>{event.title}</strong>
-              <small>{event.detail}</small>
-            </span>
-            <b>{event.amount}</b>
-          </button>
-        ))}
-      </section>
-    </main>
-  );
-}
-
-function MessagesView({ onNavigate, onOpenHelp, onOpenMessage, onOpenNotifications }) {
-  return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Messages"
-        title="Return updates"
-        description="Customer-facing status messages generated by the return resolution flow."
-      />
-      <section className="panel list-panel">
-        {customerMessages.map((message) => (
-          <button
-            className="message-row message-row-button"
-            key={message.id}
-            type="button"
-            onClick={() => onOpenMessage(message)}
-          >
-            <MessageCircle size={18} />
-            <span>
-              <strong>{message.title}</strong>
-              <small>{message.detail}</small>
-            </span>
-          </button>
-        ))}
-      </section>
-    </main>
-  );
-}
-
-function SettingsView({
-  onNavigate,
-  onOpenHelp,
-  onOpenNotifications,
-  onToggleSetting,
-  settings,
-}) {
-  const settingRows = [
-    ["orderHistory", "Use order history for fit scoring"],
-    ["trustPassport", "Store trust passport after route lock"],
-    ["greenLedger", "Allow green-credit ledger updates"],
-    ["aiEvidence", "Show AI evidence on customer passport"],
-  ];
-
-  return (
-    <main className="studio workspace-page">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onOpenHelp}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <PageHeader
-        eyebrow="Settings"
-        title="Trust and AI transparency"
-        description="Controls and model status for an explainable return-resolution prototype."
-      />
-      <div className="workspace-grid">
-        <section className="panel settings-panel">
-          <h2>AI status</h2>
-          <div className="settings-row">
-            <span>
-              <strong>Custom trained model</strong>
-              <small>
-                Not trained for this prototype. The demo uses AWS Rekognition plus an
-                explainable decision layer.
-              </small>
-            </span>
-            <Badge tone="neutral">Not trained</Badge>
-          </div>
-          <div className="settings-row">
-            <span>
-              <strong>Quality signal source</strong>
-              <small>
-                Uploaded scan photos are sent to AWS Rekognition on the deployed API.
-              </small>
-            </span>
-            <Badge>AWS AI</Badge>
-          </div>
-          <div className="settings-row">
-            <span>
-              <strong>Customer decision layer</strong>
-              <small>
-                Deterministic route scoring keeps payout, trust, and impact explainable.
-              </small>
-            </span>
-            <Badge>Active</Badge>
-          </div>
-        </section>
-        <section className="panel settings-panel">
-          <h2>Privacy controls</h2>
-          {settingRows.map(([key, label]) => (
-            <div className="toggle-row" key={key}>
-              <span>{label}</span>
-              <button
-                className={`toggle-switch ${settings[key] ? "on" : ""}`}
-                type="button"
-                aria-pressed={settings[key]}
-                onClick={() => onToggleSetting(key)}
-              >
-                {settings[key] ? "On" : "Off"}
-              </button>
-            </div>
-          ))}
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function ReturnsView({
-  activeCase,
-  aiAnalysis,
-  decision,
-  maxScanStep,
-  media,
-  onExplainAi,
-  onImageSelect,
-  onNavigate,
-  onOpenAlternative,
-  onOpenBuyer,
-  onOpenBuyerList,
-  onOpenNotifications,
-  onOpenPassport,
-  onOpenReturnWindow,
-  onOpenRoute,
-  onRouteSelect,
-  onUpload,
-  selectedImage,
-  selectedRoute,
-  selectedRouteId,
-  scanStep,
-  setScanStep,
-  syncState,
-  uploadState,
-}) {
-  return (
-    <main className="studio">
-      <TopActions
-        onNavigate={onNavigate}
-        onOpenHelp={onExplainAi}
-        onOpenNotifications={onOpenNotifications}
-      />
-      <ConnectedOrder onOpenOrders={() => onNavigate("orders")} />
-      <ReturnHeader
-        onBack={() => onNavigate("home")}
-        onExplainWindow={onOpenReturnWindow}
-      />
-
-      <div className="studio-grid">
-        <section className="primary-column">
-          <div className="analysis-grid">
-            <ReturnScan
-              activeCase={activeCase}
-              maxScanStep={maxScanStep}
-              onImageSelect={onImageSelect}
-              onUpload={onUpload}
-              scanStep={scanStep}
-              selectedImage={selectedImage}
-              setScanStep={setScanStep}
-              uploadState={uploadState}
-            />
-            <div className="analysis-stack">
-              <GradePanel decision={decision} onExplainAi={onExplainAi} />
-              <AiAnalysisPanel aiAnalysis={aiAnalysis} media={media} />
-              <SignalCards scan={activeCase.scan} />
-            </div>
-          </div>
-
-          <NextBestAction
-            onOpenRoute={onOpenRoute}
-            onSelect={onRouteSelect}
-            routes={decision.routes}
-            selectedRouteId={selectedRouteId}
-          />
-          <RouteComparison
-            onOpenRoute={onOpenRoute}
-            onSelect={onRouteSelect}
-            routes={decision.routes}
-            selectedRouteId={selectedRouteId}
-          />
-        </section>
-
-        <MatchRail
-          decision={decision}
-          onCompare={() => onOpenAlternative(refurbishedAlternatives[0], "compare")}
-          onOpenAlternative={onOpenAlternative}
-          onOpenBuyer={onOpenBuyer}
-          onOpenBuyerList={onOpenBuyerList}
-          onOpenPassport={onOpenPassport}
-          selectedRouteId={selectedRouteId}
-        />
-      </div>
-
-      <ImpactBar
-        decision={decision}
-        selectedRoute={selectedRoute}
-        syncState={syncState}
-      />
-    </main>
-  );
-}
-
-function DetailList({ children }) {
-  return <div className="detail-list">{children}</div>;
-}
-
-function DetailRow({ label, value }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="condition-selector" aria-label="Declared item condition">
+      {Object.values(conditionPresets).map((preset) => (
+        <button
+          className={value === preset.id ? "active" : ""}
+          key={preset.id}
+          type="button"
+          onClick={() => onChange(preset.id)}
+        >
+          {preset.label}
+        </button>
+      ))}
     </div>
   );
 }
 
-function ActionDrawer({ drawer, onClose, onConnectExchange, onNavigate, onRouteSelect }) {
-  if (!drawer) return null;
+function ScoreBar({ label, value }) {
+  return (
+    <div className="score-bar">
+      <span>
+        {label}
+        <b>{Math.round(value)}%</b>
+      </span>
+      <i>
+        <em style={{ width: `${Math.max(4, Math.min(100, value))}%` }} />
+      </i>
+    </div>
+  );
+}
 
-  const { type, payload } = drawer;
-  let title = drawer.title;
-  let body = null;
-
-  if (type === "profile") {
-    title = "Customer profile";
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="Customer" value={returnCase.customer.name} />
-          <DetailRow label="Email" value={returnCase.customer.email} />
-          <DetailRow label="Green credits" value={returnCase.customer.creditsBalance} />
-          <DetailRow
-            label="Preferred use"
-            value={returnCase.customer.fitProfile.preferredUse}
-          />
-          <DetailRow
-            label="Comfort priority"
-            value={`${returnCase.customer.fitProfile.comfortPriority}%`}
-          />
-        </DetailList>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onNavigate("wallet")}>
-            Open wallet
-          </button>
-          <button type="button" onClick={() => onNavigate("settings")}>
-            Privacy settings
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  if (type === "order") {
-    title = payload.title;
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="Order ID" value={payload.id} />
-          <DetailRow label="Date" value={payload.date} />
-          <DetailRow label="Status" value={payload.status} />
-          <DetailRow label="Value" value={formatCurrency(payload.value)} />
-        </DetailList>
-        <p className="drawer-copy">
-          NexTurn can estimate resale value and fit risk from order context before a
-          customer starts a return.
+function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
+  if (!evaluation?.listingPreview) {
+    return (
+      <section className="panel evaluation-panel empty">
+        <SparkleLine />
+        <h2>AI grade appears here after upload</h2>
+        <p>
+          Upload the real item photo. AWS Rekognition checks identity evidence and
+          NexTurn's deterministic scorecard calculates the resale grade and price.
         </p>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onNavigate("returns")}>
-            Open returns hub
-          </button>
-          <button type="button" onClick={() => onNavigate("resale")}>
-            See resale demand
-          </button>
-        </div>
-      </>
+      </section>
     );
   }
 
-  if (type === "buyer") {
-    title = payload.name;
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="Offer" value={formatCurrency(payload.offer)} />
-          <DetailRow label="Green credits" value={payload.credits.toFixed(2)} />
-          <DetailRow label="Positive rate" value={`${payload.positiveRate}%`} />
-          <DetailRow label="Reviews" value={payload.reviews.toLocaleString()} />
-          <DetailRow label="Match reason" value={payload.reason} />
-        </DetailList>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onRouteSelect("resell")}>
-            Select resell route
-          </button>
-          <button type="button" onClick={() => onNavigate("messages")}>
-            Message updates
-          </button>
-        </div>
-      </>
-    );
-  }
+  const listing = evaluation.listingPreview;
 
-  if (type === "buyer-list") {
-    title = "Buyer queue";
-    body = (
-      <div className="drawer-list">
-        {buyerMatches.map((buyer) => (
-          <button key={buyer.id} type="button" onClick={() => drawer.openBuyer(buyer)}>
-            <img src={buyer.avatar} alt="" />
-            <span>
-              <strong>{buyer.name}</strong>
-              <small>{buyer.reason}</small>
-            </span>
-            <b>{formatCurrency(buyer.offer)}</b>
-          </button>
-        ))}
+  return (
+    <section className="panel evaluation-panel">
+      <div className="evaluation-heading">
+        <div>
+          <span>AI grading complete</span>
+          <strong>{listing.grade.grade}</strong>
+          <small>{listing.grade.summary}</small>
+        </div>
+        <Badge tone={listing.grade.grade === "C" ? "amber" : "green"}>
+          {listing.grade.confidence}
+        </Badge>
       </div>
-    );
-  }
-
-  if (type === "alternative" || type === "compare") {
-    title = type === "compare" ? "Refurbished vs new" : payload.name;
-    body = (
-      <>
-        <div className="drawer-product">
-          <img src={payload.image} alt="" />
-          <span>
-            <strong>{payload.name}</strong>
-            <small>{payload.label}</small>
-          </span>
-        </div>
-        <DetailList>
-          <DetailRow label="Price" value={formatCurrency(payload.price)} />
-          <DetailRow label="Condition" value={payload.condition} />
-          <DetailRow label="Fit score" value={`${payload.fit}%`} />
-          <DetailRow label="Predicted return risk" value={`${payload.returnRisk}%`} />
-          <DetailRow
-            label="New-item risk estimate"
-            value={`${Math.min(payload.returnRisk + 18, 42)}%`}
-          />
-        </DetailList>
-        <p className="drawer-copy">
-          This keeps the customer in Amazon's trusted flow while nudging them toward
-          lower-risk certified refurbished choices.
+      <div className="price-split">
+        <span>Auto discounted price</span>
+        <strong>{formatMarketplaceCurrency(listing.price)}</strong>
+        <small>
+          {listing.discountPercent}% below original {formatMarketplaceCurrency(listing.item.originalPrice)}
+        </small>
+      </div>
+      <div className="scorecard-grid">
+        <ScoreBar label="Functional" value={listing.scorecard.functionalScore} />
+        <ScoreBar label="Cosmetic" value={listing.scorecard.cosmeticScore} />
+        <ScoreBar label="Packaging" value={listing.scorecard.packagingScore} />
+        <ScoreBar label="Accessories" value={listing.scorecard.accessoryCompleteness} />
+      </div>
+      {listing.scorecard.damageFlags.length > 0 && (
+        <p className="damage-note">
+          Damage flags: {listing.scorecard.damageFlags.join(", ")}
         </p>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onConnectExchange(payload)}>
-            Connect to order
-          </button>
-          <button type="button" onClick={() => onRouteSelect("exchange")}>
-            Use as exchange match
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  if (type === "exchange-intent") {
-    title = "Exchange connected";
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="Order ID" value={payload.originalOrderId} />
-          <DetailRow label="Alternative" value={payload.alternativeName} />
-          <DetailRow label="Fit score" value={`${payload.fitScore}%`} />
-          <DetailRow label="Expected return risk" value={`${payload.expectedReturnRisk}%`} />
-          <DetailRow
-            label="Price difference"
-            value={payload.priceDelta <= 0 ? "No upgrade charge" : formatCurrency(payload.priceDelta)}
-          />
-          <DetailRow label="Status" value={payload.status.replaceAll("_", " ")} />
-        </DetailList>
-        <p className="drawer-copy">
-          {payload.customerMessage}
-        </p>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onRouteSelect("exchange")}>
-            Select exchange route
-          </button>
-          <button type="button" onClick={() => onNavigate("orders")}>
-            View order
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  if (type === "route") {
-    title = payload.title;
-    body = (
-      <>
-        <DetailList>
-          <DetailRow
-            label="Payout / value"
-            value={payload.payout > 0 ? formatCurrency(payload.payout) : "No cash payout"}
-          />
-          <DetailRow label="Green credits" value={payload.greenCredits.toFixed(2)} />
-          <DetailRow label="Payment time" value={payload.paymentTime} />
-          <DetailRow label="Convenience" value={payload.convenience} />
-          <DetailRow label="Customer reason" value={payload.customerReason} />
-        </DetailList>
-        <div className="drawer-actions">
-          <button type="button" onClick={() => onRouteSelect(payload.id)}>
-            Select this route
-          </button>
-          <button type="button" onClick={() => onNavigate("impact")}>
-            See impact
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  if (type === "passport") {
-    title = "Trust Passport";
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="Passport ID" value={returnCase.trustPassport.id} />
-          <DetailRow label="Authenticity" value={returnCase.trustPassport.authenticity} />
-          <DetailRow label="Functionality" value={returnCase.trustPassport.functionality} />
-          <DetailRow label="Cleaning" value={returnCase.trustPassport.cleaned} />
-          <DetailRow label="Warranty" value={`${returnCase.trustPassport.warrantyDays} days`} />
-        </DetailList>
-        <p className="drawer-copy">
-          The passport can be shown to the next owner so customers can trust certified
-          second-life items without guessing condition.
-        </p>
-      </>
-    );
-  }
-
-  if (type === "ai") {
-    title = "AI transparency";
-    body = (
-      <>
-        <DetailList>
-          <DetailRow label="AWS AI service" value="Amazon Rekognition DetectLabels" />
-          <DetailRow label="Custom training" value="Not used in this prototype" />
-          <DetailRow label="Decision layer" value="Explainable route scoring" />
-          <DetailRow label="Persistence" value="DynamoDB scan record plus S3 media object" />
-        </DetailList>
-        <p className="drawer-copy">
-          The AI detects visual labels from uploaded product images. NexTurn then uses
-          transparent business rules for condition grade, payout route, and green credits
-          so the customer can see why a decision was made.
-        </p>
-      </>
-    );
-  }
-
-  if (type === "return-window") {
-    title = "Return window";
-    body = (
-      <p className="drawer-copy">
-        This connected order has {returnCase.returnWindowDays} days left in the return
-        window. NexTurn prioritizes routes that preserve refund value while avoiding
-        disposal or low-trust liquidation.
+      )}
+      <p className="seller-hold-note">
+        You keep the item at your house. Once a buyer pays, an Amazon delivery partner
+        checks quality at pickup and delivers it to the buyer.
       </p>
+      <button
+        className="primary-action"
+        type="button"
+        disabled={isPublishing}
+        onClick={onPublish}
+      >
+        <Store size={17} /> {isPublishing ? "Publishing..." : "List on NexTurn Marketplace"}
+      </button>
+    </section>
+  );
+}
+
+function SparkleLine() {
+  return (
+    <div className="sparkle-line" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function SellHubView({
+  evaluation,
+  filePreview,
+  isSignedIn,
+  isUploading,
+  listingMessage,
+  onConditionChange,
+  onEvaluate,
+  onFileSelected,
+  onPublish,
+  onSelectOrder,
+  orders,
+  selectedOrder,
+  sellerCondition,
+}) {
+  if (!isSignedIn) {
+    return (
+      <main className="studio workspace-page c2c-workspace">
+        <PageHeader
+          eyebrow="Sell / Return items"
+          title="Sign in before listing a product"
+          description="Selling requires a verified NexTurn account so the item can be tied to order history and a seller identity."
+        />
+        <SignInGate
+          title="Seller actions are locked"
+          detail="A public visitor can browse the marketplace, but listing an item requires authentication."
+        />
+      </main>
     );
   }
 
-  if (type === "notifications") {
-    title = "Recent messages";
-    body = (
-      <div className="drawer-list">
-        {customerMessages.map((message) => (
-          <button key={message.id} type="button" onClick={() => onNavigate("messages")}>
-            <MessageCircle size={18} />
-            <span>
-              <strong>{message.title}</strong>
-              <small>{message.detail}</small>
-            </span>
+  return (
+    <main className="studio workspace-page c2c-workspace">
+      <PageHeader
+        eyebrow="Sell / Return items"
+        title="Choose a verified Amazon purchase"
+        description="The order history below is hardcoded for the prototype and acts as the proof-of-authenticity anchor."
+      />
+
+      <div className="sell-grid">
+        <section className="panel order-history-panel">
+          <div className="panel-heading">
+            <h2>Fake Amazon order history</h2>
+            <Badge>Proof anchor</Badge>
+          </div>
+          <div className="order-proof-list">
+            {orders.map((order) => (
+              <OrderCard
+                isSelected={selectedOrder?.id === order.id}
+                key={order.id}
+                onSelect={onSelectOrder}
+                order={order}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="panel seller-upload-panel">
+          <div className="panel-heading">
+            <h2>Real item scan</h2>
+            <Badge tone="neutral">AWS AI evidence</Badge>
+          </div>
+          {selectedOrder ? (
+            <div className="selected-order-summary">
+              <img src={selectedOrder.image} alt="" />
+              <span>
+                <strong>{selectedOrder.title}</strong>
+                <small>
+                  Original price {formatMarketplaceCurrency(selectedOrder.originalPrice)}
+                </small>
+              </span>
+            </div>
+          ) : (
+            <p className="muted-copy">Select an order before uploading the resale photo.</p>
+          )}
+          <ConditionSelector
+            value={sellerCondition.preset}
+            onChange={(preset) => onConditionChange({ preset })}
+          />
+          <label className="upload-dropzone">
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              disabled={!selectedOrder || isUploading}
+              onChange={(event) => onFileSelected(event.target.files?.[0])}
+            />
+            {filePreview ? (
+              <img src={filePreview} alt="Uploaded item preview" />
+            ) : (
+              <span>
+                <Upload size={26} />
+                Upload real-time item photo
+              </span>
+            )}
+          </label>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={!selectedOrder || isUploading}
+            onClick={onEvaluate}
+          >
+            {isUploading ? "Running AI grade..." : "Run AI grade"}
           </button>
-        ))}
+          {listingMessage && <p className="status-copy">{listingMessage}</p>}
+        </section>
+
+        <EvaluationPanel
+          evaluation={evaluation}
+          isPublishing={isUploading}
+          onPublish={onPublish}
+        />
       </div>
-    );
-  }
+    </main>
+  );
+}
 
-  if (type === "credit") {
-    title = payload.title;
-    body = (
-      <DetailList>
-        <DetailRow label="Credit change" value={payload.amount} />
-        <DetailRow label="Reason" value={payload.detail} />
-        <DetailRow label="Redeemable value" value={formatCurrency(returnCase.customer.creditsValue)} />
-      </DetailList>
-    );
-  }
+function HeroListingCard({ listing, onOpen }) {
+  return (
+    <button className="hero-listing-card" type="button" onClick={() => onOpen(listing)}>
+      <img src={listing.image} alt="" />
+      <span className="listing-badge">{listing.badge}</span>
+      <div>
+        <strong>{listing.item.title}</strong>
+        <small>
+          {listing.grade.grade} · {listing.grade.label} · {listing.discountPercent}% off
+        </small>
+      </div>
+      <footer>
+        <b>{formatMarketplaceCurrency(listing.price)}</b>
+        <em>Seller keeps item until purchase</em>
+      </footer>
+    </button>
+  );
+}
 
-  if (type === "message") {
-    title = payload.title;
-    body = <p className="drawer-copy">{payload.detail}</p>;
-  }
+function GenericItemCard({ item, onOpen }) {
+  return (
+    <button className="generic-item-card" type="button" onClick={() => onOpen(item)}>
+      <img src={item.image} alt="" />
+      <span>
+        <strong>{item.title}</strong>
+        <small>{item.category}</small>
+      </span>
+      <b>{formatMarketplaceCurrency(item.price)}</b>
+    </button>
+  );
+}
+
+function MarketplaceView({
+  isLoading,
+  marketplace,
+  onOpenListing,
+  onSearch,
+  searchTerm,
+}) {
+  const filteredGeneric = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return marketplace.genericItems;
+
+    return marketplace.genericItems.filter((item) =>
+      `${item.title} ${item.category}`.toLowerCase().includes(query),
+    );
+  }, [marketplace.genericItems, searchTerm]);
+
+  return (
+    <main className="studio workspace-page c2c-workspace marketplace-page">
+      <PageHeader
+        eyebrow="Buy / Marketplace"
+        title="Second-life items with proof you can inspect"
+        description="AI-graded listings are injected above the public API product feed so judges can see the working C2C inventory."
+        action={
+          <label className="market-search">
+            <Search size={16} />
+            <input
+              type="search"
+              value={searchTerm}
+              placeholder="Search marketplace"
+              onChange={(event) => onSearch(event.target.value)}
+            />
+          </label>
+        }
+      />
+
+      <section className="hero-market-section">
+        <div className="section-heading">
+          <h2>AI Graded & Amazon Verified</h2>
+          <Badge>{marketplace.heroListings.length} live listings</Badge>
+        </div>
+        <div className="hero-listing-grid">
+          {marketplace.heroListings.map((listing) => (
+            <HeroListingCard key={listing.id} listing={listing} onOpen={onOpenListing} />
+          ))}
+        </div>
+      </section>
+
+      <section className="generic-market-section">
+        <div className="section-heading">
+          <h2>Marketplace background feed</h2>
+          <Badge tone="neutral">
+            {isLoading ? "Loading" : `${filteredGeneric.length} public API items`}
+          </Badge>
+        </div>
+        <div className="generic-grid">
+          {filteredGeneric.map((item) => (
+            <GenericItemCard key={item.id} item={item} onOpen={onOpenListing} />
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function MyListingsView({ listings, onOpenListing }) {
+  return (
+    <main className="studio workspace-page c2c-workspace">
+      <PageHeader
+        eyebrow="My listings"
+        title="Items you are holding at home"
+        description="NexTurn only coordinates pickup after a buyer pays. Until then, the product remains with the seller."
+      />
+      {listings.length ? (
+        <div className="hero-listing-grid compact">
+          {listings.map((listing) => (
+            <HeroListingCard key={listing.id} listing={listing} onOpen={onOpenListing} />
+          ))}
+        </div>
+      ) : (
+        <section className="panel sign-in-gate">
+          <PackageOpen size={24} />
+          <h2>No active listings yet</h2>
+          <p>Publish an item from the Sell / Return hub and it will appear here.</p>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function ImpactView() {
+  return (
+    <main className="studio workspace-page c2c-workspace">
+      <PageHeader
+        eyebrow="Impact"
+        title="Why the direct C2C model matters"
+        description="Keeping items with sellers until purchase avoids warehouse hops, reduces unnecessary handling, and gives buyers transparent proof before checkout."
+      />
+      <div className="metric-grid">
+        <MetricCard
+          label="Warehouse hops"
+          value="0"
+          detail="No centralized return warehouse in this flow"
+          Icon={PackageCheck}
+        />
+        <MetricCard
+          label="Trust signal"
+          value="Order proof"
+          detail="Fake Amazon order metadata anchors authenticity"
+          Icon={ShieldCheck}
+        />
+        <MetricCard
+          label="Buyer confidence"
+          value="Scorecard"
+          detail="Functional, cosmetic, packaging, and accessory scores"
+          Icon={BadgeCheck}
+        />
+      </div>
+    </main>
+  );
+}
+
+function SettingsView() {
+  return (
+    <main className="studio workspace-page c2c-workspace">
+      <PageHeader
+        eyebrow="Settings"
+        title="Prototype transparency"
+        description="This demo uses AWS Rekognition for image evidence, a deterministic scorecard for grade, DynamoDB for listings, and a mock payment success state."
+      />
+      <section className="panel settings-panel c2c-settings">
+        <div className="settings-row">
+          <span>
+            <strong>Warehouse involvement</strong>
+            <small>Disabled by product rule. Seller holds item until sale.</small>
+          </span>
+          <Badge>No warehouse</Badge>
+        </div>
+        <div className="settings-row">
+          <span>
+            <strong>Payment</strong>
+            <small>Mock checkout only. Item payment routes to seller, delivery fee to Amazon.</small>
+          </span>
+          <Badge tone="neutral">Simulated</Badge>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ListingDrawer({
+  checkoutState,
+  isSignedIn,
+  listing,
+  onBuy,
+  onClose,
+  signedInCustomerId,
+}) {
+  if (!listing) return null;
+
+  const isHero = listing.source === "nexturn-ai-graded";
+  const isOwnListing = isHero && listing.sellerId === signedInCustomerId;
 
   return (
     <div className="drawer-backdrop" role="presentation" onClick={onClose}>
       <aside
-        className="drawer-panel"
-        aria-label={title}
+        className="drawer-panel listing-detail-drawer"
+        aria-label={isHero ? listing.item.title : listing.title}
         aria-modal="true"
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
         <header>
-          <h2>{title}</h2>
+          <h2>{isHero ? listing.item.title : listing.title}</h2>
           <button type="button" aria-label="Close panel" onClick={onClose}>
             <X size={18} />
           </button>
         </header>
-        <div className="drawer-body">{body}</div>
+
+        {isHero ? (
+          <div className="drawer-body">
+            <img className="drawer-hero-image" src={listing.image} alt="" />
+            <div className="listing-price-block">
+              <span>{listing.badge}</span>
+              <strong>{formatMarketplaceCurrency(listing.price)}</strong>
+              <small>
+                Original {formatMarketplaceCurrency(listing.item.originalPrice)} ·{" "}
+                {listing.discountPercent}% off
+              </small>
+            </div>
+            <section className="proof-box">
+              <h3>Original Amazon proof</h3>
+              <p>
+                Order # {listing.item.id} · Purchased {listing.item.purchaseDate} · ASIN{" "}
+                {listing.item.asin}
+              </p>
+              <p>{listing.item.proofNote}</p>
+            </section>
+            <section className="proof-box">
+              <h3>Transparent scorecard</h3>
+              <ScoreBar label="Functional" value={listing.scorecard.functionalScore} />
+              <ScoreBar label="Cosmetic" value={listing.scorecard.cosmeticScore} />
+              <ScoreBar label="Packaging" value={listing.scorecard.packagingScore} />
+              <ScoreBar label="Accessories" value={listing.scorecard.accessoryCompleteness} />
+              <p>
+                Grade {listing.grade.grade}: {listing.grade.summary}
+              </p>
+            </section>
+            <section className="checkout-split">
+              <h3>Checkout split</h3>
+              <div>
+                <span>Item payment to seller</span>
+                <b>{formatMarketplaceCurrency(listing.price)}</b>
+              </div>
+              <div>
+                <span>Amazon Delivery Fee</span>
+                <b>{formatMarketplaceCurrency(listing.deliveryFee)}</b>
+              </div>
+              <div>
+                <span>Total mock payment</span>
+                <b>{formatMarketplaceCurrency(listing.price + listing.deliveryFee)}</b>
+              </div>
+            </section>
+            <p className="seller-hold-note">{listing.logistics}</p>
+            {checkoutState?.receipt?.listingId === listing.id ? (
+              <section className="payment-success">
+                <BadgeCheck size={22} />
+                <strong>Payment done</strong>
+                <span>
+                  Receipt {checkoutState.receipt.id} · pickup scheduled from seller home.
+                </span>
+              </section>
+            ) : (
+              <button
+                className="primary-action"
+                type="button"
+                disabled={!isSignedIn || isOwnListing || checkoutState?.status === "loading"}
+                onClick={() => onBuy(listing)}
+              >
+                <CircleDollarSign size={17} />
+                {!isSignedIn
+                  ? "Sign in to buy"
+                  : isOwnListing
+                    ? "Your own listing"
+                    : checkoutState?.status === "loading"
+                      ? "Processing..."
+                      : "Buy now"}
+              </button>
+            )}
+            {checkoutState?.error && <p className="auth-error">{checkoutState.error}</p>}
+          </div>
+        ) : (
+          <div className="drawer-body">
+            <img className="drawer-hero-image" src={listing.image} alt="" />
+            <div className="listing-price-block">
+              <span>Public API marketplace item</span>
+              <strong>{formatMarketplaceCurrency(listing.price)}</strong>
+              <small>{listing.category}</small>
+            </div>
+            <p className="drawer-copy">
+              This item fills the marketplace background from a public API. The full
+              proof, AI grading, and C2C checkout flow is available on NexTurn hero listings.
+            </p>
+          </div>
+        )}
       </aside>
     </div>
   );
 }
 
 export function App() {
-  const initialDecision = useMemo(() => summarizeDecision(returnCase), []);
-  const [activeCase, setActiveCase] = useState(returnCase);
-  const [activeView, setActiveView] = useState("returns");
-  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [activeView, setActiveView] = useState("sell");
   const [auth, setAuth] = useState({
     status: "loading",
     config: null,
     session: null,
     error: null,
   });
-  const [decision, setDecision] = useState(initialDecision);
-  const [drawer, setDrawer] = useState(null);
+  const [checkoutState, setCheckoutState] = useState(null);
+  const [evaluation, setEvaluation] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
+  const [isLoadingMarketplace, setLoadingMarketplace] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [maxScanStep, setMaxScanStep] = useState(0);
-  const [media, setMedia] = useState(null);
-  const [scanStep, setScanStep] = useState(0);
-  const [selectedImage, setSelectedImage] = useState(returnCase.item.image);
-  const [selectedRouteId, setSelectedRouteId] = useState(initialDecision.recommended.id);
-  const [settings, setSettings] = useState({
-    aiEvidence: true,
-    greenLedger: true,
-    orderHistory: true,
-    trustPassport: true,
+  const [isUploading, setUploading] = useState(false);
+  const [listingMessage, setListingMessage] = useState("");
+  const [marketplace, setMarketplace] = useState({
+    heroListings: [],
+    genericItems: [],
   });
-  const [syncState, setSyncState] = useState({
-    status: "idle",
-    message: "Local decision ready",
-  });
-  const [uploadState, setUploadState] = useState({
-    status: "idle",
-    title: "Ready for upload",
-    message: "Upload a fresh product photo to run AWS Rekognition on the deployed app.",
-  });
+  const [orders, setOrders] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedListing, setSelectedListing] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [sellerCondition, setSellerCondition] = useState({ preset: "pristine" });
 
-  const selectedRoute =
-    decision.routes.find((route) => route.id === selectedRouteId) ??
-    decision.recommended;
+  const isSignedIn = Boolean(auth.session);
+  const signedInCustomerId = auth.session?.user?.subject
+    ? `cognito#${auth.session.user.subject}`
+    : undefined;
+  const myListings = useMemo(
+    () =>
+      marketplace.heroListings.filter(
+        (listing) => listing.sellerId && listing.sellerId === signedInCustomerId,
+      ),
+    [marketplace.heroListings, signedInCustomerId],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -1571,13 +832,45 @@ export function App() {
     };
   }, []);
 
-  function openDrawer(type, payload = {}, extra = {}) {
-    setDrawer({ type, payload, ...extra });
+  useEffect(() => {
+    refreshMarketplace();
+  }, []);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setOrders([]);
+      setSelectedOrder(null);
+      return;
+    }
+
+    fetchC2COrders()
+      .then((payload) => {
+        setOrders(payload.orders ?? []);
+        setSelectedOrder((current) => current ?? payload.orders?.[0] ?? null);
+      })
+      .catch((error) => {
+        setListingMessage(error.message);
+      });
+  }, [isSignedIn]);
+
+  async function refreshMarketplace() {
+    setLoadingMarketplace(true);
+    try {
+      const payload = await fetchC2CMarketplace();
+      setMarketplace({
+        heroListings: payload.heroListings ?? [],
+        genericItems: payload.genericItems ?? [],
+      });
+    } catch (error) {
+      setListingMessage(error.message);
+    } finally {
+      setLoadingMarketplace(false);
+    }
   }
 
   function navigate(view) {
     setActiveView(view);
-    setDrawer(null);
+    setSelectedListing(null);
   }
 
   async function handleSignIn(provider) {
@@ -1596,141 +889,94 @@ export function App() {
     signOut(auth.config);
   }
 
-  async function handleRouteSelect(routeId) {
-    const previousRouteId = selectedRouteId;
-    setSelectedRouteId(routeId);
-    setSyncState({ status: "syncing", message: "Syncing route..." });
-
-    try {
-      const result = await lockRoute(routeId);
-      setMaxScanStep(3);
-      setScanStep(3);
-      setSyncState({
-        status: result.persisted ? "synced" : "idle",
-        message: result.persisted ? "Synced to AWS route ledger" : result.message,
-      });
-    } catch (error) {
-      setSelectedRouteId(previousRouteId);
-      setSyncState({
-        status: "error",
-        message: error.message ?? "API unavailable. Decision kept locally.",
-      });
-    }
+  function handleSelectOrder(order) {
+    setSelectedOrder(order);
+    setEvaluation(null);
+    setListingMessage("");
   }
 
-  async function handleUpload(file) {
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadState({
-        status: "error",
-        title: "Upload too large",
-        message: "Use a product photo under 5 MB for this prototype.",
-      });
+  function handleFileSelected(file) {
+    if (!file) return;
+    setSelectedFile(file);
+    setFilePreview(URL.createObjectURL(file));
+    setEvaluation(null);
+    setListingMessage("Photo ready. Run AI grade to evaluate condition and price.");
+  }
+
+  async function handleEvaluate() {
+    if (!selectedOrder || !selectedFile) {
+      setListingMessage("Select an order and upload the real item photo first.");
       return;
     }
 
-    setMaxScanStep(1);
-    setScanStep(1);
-    setUploadState({
-      status: "syncing",
-      title: "Analyzing scan",
-      message: "Uploading image and requesting AI labels...",
-    });
-    setSyncState({ status: "syncing", message: "Running AI scan..." });
-
+    setUploading(true);
+    setListingMessage("Running AWS AI evidence and deterministic scorecard...");
     try {
-      const result = await evaluateScanUpload(file, activeCase.scan);
-      setSelectedImage(result.imagePreview);
-      setAiAnalysis(result.aiAnalysis);
-      setMedia(result.media);
-
-      if (result.case) {
-        const nextDecision = summarizeDecision(result.case);
-        setActiveCase(result.case);
-        setDecision(nextDecision);
-        setSelectedRouteId(result.recommendedRoute?.id ?? nextDecision.recommended.id);
-      }
-
-      const usedAws = Boolean(result.aiAnalysis?.usedAws);
-      setMaxScanStep(2);
-      setScanStep(2);
-      setUploadState({
-        status: usedAws ? "synced" : "idle",
-        title: usedAws ? "AWS AI complete" : "Upload processed",
-        message:
-          result.aiAnalysis?.summary ??
-          "Scan image was accepted and the condition decision was refreshed.",
-      });
-      setSyncState({
-        status: result.persisted ? "synced" : usedAws ? "synced" : "idle",
-        message: usedAws
-          ? "AWS Rekognition labels applied"
-          : result.aiAnalysis?.summary ?? "Upload kept locally",
-      });
+      const result = await evaluateC2CListingUpload(
+        selectedFile,
+        selectedOrder.id,
+        sellerCondition,
+      );
+      setEvaluation(result);
+      setListingMessage(result.customerMessage ?? "AI grade ready.");
     } catch (error) {
-      setMaxScanStep(0);
-      setScanStep(0);
-      setUploadState({
-        status: "error",
-        title: "Upload failed",
-        message: error.message,
+      setListingMessage(error.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (!selectedOrder || !selectedFile) {
+      setListingMessage("Upload and grade the item before listing.");
+      return;
+    }
+
+    setUploading(true);
+    setListingMessage("Publishing listing to the global NexTurn marketplace...");
+    try {
+      const result = await createC2CListing(selectedFile, selectedOrder.id, sellerCondition);
+      setListingMessage(result.customerMessage ?? "Listing published.");
+      await refreshMarketplace();
+      setSelectedListing(result.listing);
+      setActiveView("marketplace");
+    } catch (error) {
+      setListingMessage(error.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleBuy(listing) {
+    setCheckoutState({ status: "loading" });
+    try {
+      const result = await checkoutC2CListing(listing.id);
+      setCheckoutState({
+        status: "success",
+        receipt: result.receipt,
+        message: result.customerMessage,
       });
-      setSyncState({
+      await refreshMarketplace();
+    } catch (error) {
+      setCheckoutState({
         status: "error",
-        message: "AI scan unavailable. Existing decision preserved.",
+        error: error.message,
       });
     }
   }
 
-  async function handleConnectExchange(item) {
-    setSyncState({ status: "syncing", message: "Connecting exchange to order..." });
+  function handleOpenListing(listing) {
+    setCheckoutState(null);
+    setSelectedListing(listing);
+  }
 
-    try {
-      const result = await connectExchangeToOrder(item.id);
-      const priceDelta = Number((item.price - returnCase.item.originalPrice).toFixed(2));
-      const exchangeIntent = {
-        id: result.exchangeIntent?.id ?? `local_exchange_${item.id}`,
-        status: result.exchangeIntent?.status ?? "connected_locally",
-        originalOrderId: result.exchangeIntent?.originalOrderId ?? returnCase.order.id,
-        returnId: result.exchangeIntent?.returnId ?? returnCase.id,
-        alternativeId: result.exchangeIntent?.alternativeId ?? item.id,
-        alternativeName: result.exchangeIntent?.alternativeName ?? item.name,
-        alternativeLabel: result.exchangeIntent?.alternativeLabel ?? item.label,
-        fitScore: result.exchangeIntent?.fitScore ?? item.fit,
-        expectedReturnRisk: result.exchangeIntent?.expectedReturnRisk ?? item.returnRisk,
-        priceDelta: result.exchangeIntent?.priceDelta ?? priceDelta,
-        customerCreditPreview: result.exchangeIntent?.customerCreditPreview ?? 2,
-        customerMessage: result.message,
-      };
-      setSelectedRouteId("exchange");
-      setMaxScanStep(3);
-      setScanStep(3);
-      setSyncState({
-        status: result.persisted ? "synced" : "idle",
-        message: result.persisted
-          ? "Exchange intent synced to AWS"
-          : result.message,
-      });
-      setDrawer({ type: "exchange-intent", payload: exchangeIntent });
-    } catch (error) {
-      setSyncState({
-        status: "error",
-        message: error.message ?? "Exchange connection failed.",
-      });
+  function handleConditionChange(nextCondition) {
+    setSellerCondition(nextCondition);
+    setEvaluation(null);
+    if (selectedFile) {
+      setListingMessage("Condition changed. Re-run AI grade before publishing.");
     }
   }
-
-  function toggleSetting(key) {
-    setSettings((current) => ({
-      ...current,
-      [key]: !current[key],
-    }));
-  }
-
-  const commonPageProps = {
-    onNavigate: navigate,
-    onOpenHelp: () => openDrawer("ai"),
-    onOpenNotifications: () => openDrawer("notifications"),
-  };
 
   return (
     <div className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -1744,87 +990,54 @@ export function App() {
         onSignOut={handleSignOut}
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
       />
+
       {activeView === "home" && (
-        <HomeView
-          {...commonPageProps}
-          decision={decision}
-          onOpenAlternative={(item) => openDrawer("alternative", item)}
-        />
-      )}
-      {activeView === "orders" && (
-        <OrdersView
-          {...commonPageProps}
-          onOpenOrder={(order) => openDrawer("order", order)}
-        />
-      )}
-      {activeView === "returns" && (
-        <ReturnsView
-          activeCase={activeCase}
-          aiAnalysis={aiAnalysis}
-          decision={decision}
-          maxScanStep={maxScanStep}
-          media={media}
-          onExplainAi={() => openDrawer("ai")}
-          onImageSelect={setSelectedImage}
+        <OverviewView
+          isSignedIn={isSignedIn}
+          marketplace={marketplace}
           onNavigate={navigate}
-          onOpenAlternative={(item, type = "alternative") => openDrawer(type, item)}
-          onOpenBuyer={(buyer) => openDrawer("buyer", buyer)}
-          onOpenBuyerList={() =>
-            openDrawer("buyer-list", {}, { openBuyer: (buyer) => openDrawer("buyer", buyer) })
-          }
-          onOpenNotifications={() => openDrawer("notifications")}
-          onOpenPassport={() => openDrawer("passport")}
-          onOpenReturnWindow={() => openDrawer("return-window")}
-          onOpenRoute={(route) => openDrawer("route", route)}
-          onRouteSelect={handleRouteSelect}
-          onUpload={handleUpload}
-          scanStep={scanStep}
-          selectedImage={selectedImage}
-          selectedRoute={selectedRoute}
-          selectedRouteId={selectedRouteId}
-          setScanStep={setScanStep}
-          syncState={syncState}
-          uploadState={uploadState}
+          orders={orders}
         />
       )}
-      {activeView === "resale" && (
-        <ResaleDashboardView
-          {...commonPageProps}
-          onOpenBuyer={(buyer) => openDrawer("buyer", buyer)}
+      {activeView === "sell" && (
+        <SellHubView
+          evaluation={evaluation}
+          filePreview={filePreview}
+          isSignedIn={isSignedIn}
+          isUploading={isUploading}
+          listingMessage={listingMessage}
+          onConditionChange={handleConditionChange}
+          onEvaluate={handleEvaluate}
+          onFileSelected={handleFileSelected}
+          onPublish={handlePublish}
+          onSelectOrder={handleSelectOrder}
+          orders={orders}
+          selectedOrder={selectedOrder}
+          sellerCondition={sellerCondition}
         />
       )}
-      {activeView === "impact" && (
-        <GreenImpactView
-          {...commonPageProps}
-          decision={decision}
-          onOpenRoute={(route) => openDrawer("route", route)}
+      {activeView === "marketplace" && (
+        <MarketplaceView
+          isLoading={isLoadingMarketplace}
+          marketplace={marketplace}
+          onOpenListing={handleOpenListing}
+          onSearch={setSearchTerm}
+          searchTerm={searchTerm}
         />
       )}
-      {activeView === "wallet" && (
-        <CreditsWalletView
-          {...commonPageProps}
-          onOpenCredit={(event) => openDrawer("credit", event)}
-        />
+      {activeView === "listings" && (
+        <MyListingsView listings={myListings} onOpenListing={handleOpenListing} />
       )}
-      {activeView === "messages" && (
-        <MessagesView
-          {...commonPageProps}
-          onOpenMessage={(message) => openDrawer("message", message)}
-        />
-      )}
-      {activeView === "settings" && (
-        <SettingsView
-          {...commonPageProps}
-          onToggleSetting={toggleSetting}
-          settings={settings}
-        />
-      )}
-      <ActionDrawer
-        drawer={drawer}
-        onClose={() => setDrawer(null)}
-        onConnectExchange={handleConnectExchange}
-        onNavigate={navigate}
-        onRouteSelect={handleRouteSelect}
+      {activeView === "impact" && <ImpactView />}
+      {activeView === "settings" && <SettingsView />}
+
+      <ListingDrawer
+        checkoutState={checkoutState}
+        isSignedIn={isSignedIn}
+        listing={selectedListing}
+        onBuy={handleBuy}
+        onClose={() => setSelectedListing(null)}
+        signedInCustomerId={signedInCustomerId}
       />
     </div>
   );
