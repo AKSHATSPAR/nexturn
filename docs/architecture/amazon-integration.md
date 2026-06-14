@@ -1,52 +1,68 @@
 # Amazon Integration Path
 
-NexTurn is designed to sit beside Amazon's return and renewed-commerce journeys,
-while the hackathon prototype stays buildable with AWS Free Tier resources.
+NexTurn is designed as a direct Customer-to-Customer layer beside Amazon's
+commerce and returns experience. The important product rule is that no warehouse
+is involved: the item stays with the seller until a buyer purchases it.
 
 ## Prototype Boundary
 
-The current build uses a seeded connected-order case in `src/data/returnCase.js`.
-That keeps the customer flow demoable without private marketplace credentials.
-The backend and UI already treat the case as adapter-fed data, so real Amazon
-inputs can replace the seed without changing the customer workflow.
+The prototype cannot connect to a real Amazon account, so it uses a hardcoded
+fake Amazon order history in `src/data/c2cCommerce.js`. That seeded history is
+the authenticity anchor for the demo:
+
+- order ID;
+- ASIN;
+- original price;
+- purchase date;
+- pristine original product image;
+- package contents;
+- proof note.
+
+This lets judges see how real Amazon order data would prove ownership and reduce
+buyer anxiety without requiring private Amazon APIs.
+
+## Direct C2C Flow
+
+1. **Seller proof**: signed-in seller selects an item from fake Amazon order
+   history.
+2. **Real item evidence**: seller uploads a current product photo.
+3. **AI and scorecard**: Rekognition checks visual evidence and NexTurn's
+   deterministic scorecard assigns grade and resale price.
+4. **Marketplace listing**: item is listed with "AI Graded & Amazon Verified"
+   badge.
+5. **No warehouse hold**: seller keeps the item at home.
+6. **Buyer inspection**: buyer sees order proof, scorecard, discount, and
+   delivery fee before checkout.
+7. **Mock checkout**: buyer pays discounted price plus Amazon Delivery Fee.
+8. **Facilitated delivery**: Amazon delivery partner verifies quality at seller
+   pickup and delivers to buyer.
 
 ## Production Adapter Flow
 
-1. **Order context**: import order ID, item SKU, price, return window, customer
-   fit preferences, and refund/exchange eligibility from an Amazon order/returns
-   adapter.
-2. **Return media**: store customer-uploaded images and videos in S3, then pass
-   derived scan signals into the decision engine.
-3. **Quality intelligence**: use Rekognition-style image checks for visible
-   condition signals and Bedrock-style explainability summaries where allowed.
-   The deterministic engine remains the final customer-visible scoring layer.
-4. **Route execution**: write resale, exchange, donation, or recycling decisions
-   to DynamoDB and expose route queues through the `RouteQueueIndex`.
-5. **Exchange connection**: when a customer chooses a certified refurbished
-   alternative, create an exchange intent tied to the original order, return ID,
-   customer identity, fit score, return-risk estimate, and price delta.
-6. **Trusted resale**: attach the Trust Passport to renewed or peer-to-peer
-   listings so buyers see authenticity, function test, cleaning, and warranty
-   status.
-7. **Return prevention**: use the customer's return/fit profile to rank
-   certified refurbished alternatives before the next purchase.
+In production, the fake order data becomes an adapter to Amazon order context:
+
+1. Import order ID, ASIN, SKU, product image, purchase price, return eligibility,
+   customer identity, and package contents.
+2. Use S3 for seller upload media and Rekognition for visual evidence.
+3. Persist listing, grade, AI evidence, seller, and checkout records in DynamoDB.
+4. Keep listing inventory with the seller until checkout.
+5. Trigger Amazon local delivery after payment simulation or real payment.
+6. Let the delivery partner verify item quality at pickup against the AI
+   scorecard and uploaded evidence.
 
 ## Why This Is Customer-Centric
 
-- The customer gets a clear recommendation, not a hidden warehouse decision.
-- Every route shows personal value: payout, credits, speed, and trust.
-- Refurbished recommendations are ranked by likely fit, lowering the chance of
-  another avoidable return.
-- Trust Passport details reduce the buyer anxiety that usually blocks
-  second-hand purchases.
-- Authenticated customers get their own order links, scan media, route locks,
-  and exchange intents instead of a shared demo-only state.
+- Sellers recover value without mailing usable items to a warehouse first.
+- Buyers get proof-backed second-hand items instead of anonymous listings.
+- The platform clearly separates seller payment from Amazon's delivery fee.
+- Trust improves because the original purchase, current condition, and pickup
+  verification are visible before checkout.
+- Sustainability improves because unnecessary warehouse movement is avoided.
 
 ## Free Tier Fit
 
-- HTTP API + Lambda handles prototype traffic without running servers.
-- DynamoDB on-demand keeps low-volume usage inexpensive.
-- S3 is reserved for static assets and future scan media.
-- Cognito Hosted UI avoids building a custom auth system and supports Google
-  federation when OAuth credentials are configured.
-- CDK keeps the stack reproducible and easy to destroy after judging.
+- HTTP API + Lambda for the API surface.
+- DynamoDB on-demand for listings and receipts.
+- S3 for uploaded scan media.
+- Cognito Hosted UI for unified buyer/seller accounts and Google federation.
+- Rekognition `DetectLabels` for practical AWS AI evidence.

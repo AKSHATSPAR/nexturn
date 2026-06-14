@@ -1,9 +1,9 @@
 # NexTurn Backend
 
-The prototype backend is a Lambda-compatible API layer that keeps the same
-deterministic decision engine used by the frontend. It is intentionally small:
-all demo paths can run locally, and the handler can be deployed behind API
-Gateway on AWS Free Tier.
+The backend is a Lambda-compatible API layer for direct Customer-to-Customer
+commerce. It keeps NexTurn's final decisions explainable: AWS Rekognition
+provides image evidence, while deterministic scorecards decide grade, resale
+price, listing status, and checkout split.
 
 ## Endpoints
 
@@ -20,18 +20,29 @@ Gateway on AWS Free Tier.
 - `POST /exchange/connect` links a certified refurbished alternative to the
   original order as a persisted exchange intent.
 - `GET /me` returns the Cognito-derived customer identity for protected flows.
+- `GET /c2c/orders` returns the signed-in customer's fake Amazon order history.
+- `POST /c2c/listings/evaluate` grades a selected order item and returns a
+  listing preview without publishing it.
+- `POST /c2c/listings` grades and publishes a C2C listing globally.
+- `GET /c2c/marketplace` returns persisted NexTurn listings plus 100+ public API
+  background items.
+- `GET /c2c/listing?listingId=...` returns one listing with proof and scorecard.
+- `POST /c2c/checkout` simulates buyer payment, persists a receipt, marks a
+  persisted listing sold, and schedules pickup from the seller home.
 
-On AWS, write routes are protected by a Cognito JWT authorizer. Local fixture
-tests can still call the handler directly.
+On AWS, buy/sell mutation routes are protected by a Cognito JWT authorizer.
+Marketplace browsing remains public, but checkout and listing creation require a
+signed-in account.
 
 ## Why Deterministic First
 
 The demo should never depend on a vague AI promise. The rules are explicit,
 repeatable, and explainable. Rekognition enriches the scan evidence from a real
 AWS AI call, but the core customer decision remains stable and testable.
-The backend filters Rekognition labels against the expected item category. If an
-upload looks like the wrong product, the scan is marked for manual review and the
-fraud-risk input is raised before grade calculation.
+
+For C2C listings, the backend compares the upload against fake Amazon order
+metadata. Damage-aware scoring means a broken-screen phone path receives a low
+grade such as `C`, not a fake high-confidence `A`.
 
 ## Local Invocation Fixtures
 

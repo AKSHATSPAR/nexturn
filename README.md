@@ -1,57 +1,78 @@
 # NexTurn
 
-NexTurn is an AI-assisted return resolution and second-life commerce prototype.
-It helps a customer decide what to do with a returned item: resell, exchange,
-donate, or recycle. The app makes the decision explainable with scan signals,
-condition grading, buyer demand, green credits, and a trust passport.
+NexTurn is a direct Customer-to-Customer second-life commerce prototype for
+returned and underused products. The core product rule is simple: no warehouse
+touches the item. The seller keeps the product at home until a buyer purchases
+it, then Amazon facilitates local pickup, quality check, and delivery.
 
-## Why This Matters
+## Customer Problem
 
-Online returns are expensive and opaque for customers. A shopper often knows only
-whether they can return an item, not what happens next or which path gives the
-best value. NexTurn turns the return moment into a guided customer decision:
+Customers lose value when usable items are returned, discarded, or pushed into
+opaque liquidation channels. Buyers also hesitate to trust second-hand products
+because condition and authenticity are unclear. NexTurn solves this from both
+sides of one unified account:
 
-- get a trusted condition grade from scan signals;
-- compare payout, convenience, green credits, and impact;
-- match the item to second-life buyers or refurbished alternatives;
-- generate a Trust Passport that makes resale more credible.
+- sellers list real products from verified order history;
+- buyers inspect proof, AI evidence, scorecard, and delivery fee split;
+- Amazon acts as the trust and logistics layer, not as a warehouse middle step.
 
 ## Implemented Prototype
 
-- Return Resolution Studio UI built with React + Vite.
-- Deterministic decision engine for grade, route ranking, and green-credit logic.
-- Real upload flow: customer return photos are sent to the backend, stored in S3,
-  analyzed with Amazon Rekognition `DetectLabels`, and surfaced as AI evidence.
-- AI transparency view that explains there is no rushed custom-trained model; AWS
-  AI provides visual signals and the final customer decision remains explainable.
-- Lambda-compatible API with endpoints for case fetch, workspace pages, scan
-  evaluation, route selection, and order-linked exchange intents.
-- Amazon Cognito Hosted UI for customer sign-in, with optional Google federation
-  enabled when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are supplied.
-- DynamoDB persistence path for scan evaluations, route decisions, trust passport
-  updates, order-linked exchange intents, and credit ledger events.
-- AWS CDK stack for DynamoDB, Lambda, HTTP API Gateway, private S3 media storage,
-  Cognito, Rekognition permissions, and CloudWatch logs.
-- Generated product and profile assets for a realistic demo surface.
+- Unified Buyer + Seller account shell with Cognito Hosted UI and optional Google
+  sign-in.
+- Sell / Return Items hub gated behind login.
+- Hardcoded fake Amazon order history with 5 high-value products, original
+  price, purchase date, ASIN, original product image, and proof metadata.
+- Real upload flow for seller item photos.
+- AWS Rekognition image evidence on deployed API, combined with deterministic
+  condition scoring for functional, cosmetic, packaging, accessory, and identity
+  signals.
+- Damage-aware grading: cracked or broken screen evidence forces low grades like
+  `C` instead of pretending every upload is `A`.
+- Dynamic discounted resale price based on grade.
+- Global C2C marketplace that merges NexTurn AI-graded listings with 100+ public
+  API background products from DummyJSON.
+- Listing detail drawer with transparent scorecard, original order proof,
+  discounted price, and "AI Graded & Amazon Verified" badge.
+- Mock checkout: buyer pays item price plus flat Amazon Delivery Fee. The item
+  payment is assigned to the seller; Amazon only facilitates local delivery.
+- DynamoDB persistence for created listings and checkout receipts.
+- S3 media persistence and Rekognition permissions in the AWS CDK stack.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  Customer["Customer browser"] --> Web["React NexTurn app"]
-  Web --> Auth["Cognito Hosted UI"]
+  Seller["Customer A: seller"] --> Web["React NexTurn app"]
+  Buyer["Customer B: buyer"] --> Web
+  Web --> Auth["Cognito Hosted UI + Google"]
   Web --> API["HTTP API Gateway"]
-  API --> JWT["JWT authorizer"]
-  API --> Lambda["Return Resolution Lambda"]
+  API --> JWT["JWT authorizer for buy/sell"]
+  API --> Lambda["NexTurn Lambda"]
+  Lambda --> Orders["Fake Amazon order history"]
   Lambda --> Rekognition["Amazon Rekognition"]
-  Lambda --> S3["Private S3 media bucket"]
-  Lambda --> Engine["Decision engine"]
-  Lambda --> DDB["DynamoDB NexTurnTable"]
-  Web --> Site["HTTP API static site Lambda"]
-  Site --> Assets["Built React assets"]
-  Lambda --> Logs["CloudWatch logs"]
-  Engine --> Passport["Trust Passport + route ranking"]
+  Lambda --> S3["Private S3 scan media"]
+  Lambda --> Scorecard["Explainable grade + price engine"]
+  Lambda --> DDB["DynamoDB listings + checkout"]
+  Lambda --> PublicFeed["DummyJSON public marketplace feed"]
+  DDB --> Marketplace["Global C2C marketplace"]
 ```
+
+## Main Flow
+
+1. Seller signs in.
+2. Seller opens Sell / Return Items and selects a product from fake Amazon order
+   history.
+3. Seller uploads a real item photo and chooses the visible condition preset.
+4. Backend runs AWS AI evidence when deployed and the scorecard calculates grade
+   and discounted resale price.
+5. Seller publishes the listing. The item stays with the seller at home.
+6. Another signed-in buyer opens Marketplace and sees the listing above the
+   public API product feed.
+7. Buyer opens the listing, checks order proof, scorecard, price, and delivery
+   split.
+8. Buyer clicks Buy now. Payment is simulated, checkout receipt is persisted, and
+   pickup is scheduled from the seller home.
 
 ## Local Development
 
@@ -62,49 +83,39 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`.
 
-## Live AWS Demo
-
-https://l5f3ovamaj.execute-api.us-east-1.amazonaws.com
+Local mode can render the app and marketplace. Authenticated buy/sell flows are
+fully available on the deployed AWS URL because Cognito provides real JWTs.
 
 ## Verification
 
 ```bash
-npm run build
+npm run test
 npm run smoke:api
+npm run build
 npm run cdk:synth
 ```
 
 ## AWS Deployment
 
-The CDK stack targets `us-east-1` by default.
+The CDK stack targets `us-east-1` by default and uses Free Tier friendly
+services: HTTP API, Lambda, DynamoDB on-demand, S3, Cognito, and Rekognition.
 
 ```bash
 npm run cdk:synth
 npm run cdk:deploy
 ```
 
-The stack uses pay-per-request DynamoDB and a small ARM Lambda to stay
-free-tier-friendly for prototype traffic. The deployed stack outputs the live
-site/API URL, DynamoDB table name, and backing S3 bucket name for uploaded scan
-media.
-
-### Google Sign-In
-
-The deployed app always includes Cognito email sign-in. Google sign-in is wired
-but intentionally configuration-gated: set `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET` before `npm run cdk:deploy` to enable the Google identity
-provider. Without those credentials, the UI shows the Google option as disabled
-instead of pretending federation is active.
+Google sign-in is configuration-gated. Set `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` before deploy to keep Google federation enabled.
 
 ## Key Files
 
-- `src/lib/decisionEngine.js` - grading, route ranking, and impact logic.
-- `src/data/returnCase.js` - realistic seeded return scenario.
+- `src/App.jsx` - C2C buyer/seller web app.
+- `src/data/c2cCommerce.js` - fake order history, demo accounts, seed listings,
+  and condition presets.
+- `src/lib/c2cCommerce.js` - scorecard, grade, pricing, listing, and checkout
+  rules.
 - `backend/lambda/returnResolution.js` - Lambda-compatible API handler.
 - `backend/lib/aiImageAnalysis.js` - S3 upload and Amazon Rekognition analysis.
 - `backend/lib/dynamodbRepository.js` - DynamoDB persistence adapter.
-- `infra/cdk/app.mjs` - AWS CDK stack.
-- `docs/architecture/` - DynamoDB model and access patterns.
-- `docs/architecture/ai-model-strategy.md` - current AI approach and training
-  plan.
-- `docs/design/return-resolution-studio-concept.png` - selected visual concept.
+- `infra/cdk/app.mjs` - AWS infrastructure.

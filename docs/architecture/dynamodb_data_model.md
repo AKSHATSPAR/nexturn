@@ -64,6 +64,20 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 - **Projection**: include route, grade, value, and customer summary fields.
 - **Sparse**: only routable items include `routeStatus`.
 
+### MarketplaceIndex
+
+| marketplaceStatus | updatedAt | pk | sk | entityType | listingId |
+| --- | --- | --- | --- | --- | --- |
+| `LISTING#ACTIVE` | `2026-06-14T10:00:00Z` | `LISTING#nt_112741...` | `PROFILE` | `C2CListing` | `nt_112741...` |
+| `LISTING#SOLD` | `2026-06-14T10:08:00Z` | `LISTING#nt_112741...` | `PROFILE` | `C2CListing` | `nt_112741...` |
+
+- **Purpose**: list active direct C2C marketplace inventory without scanning.
+- **Partition Key**: `marketplaceStatus`.
+- **Sort Key**: `updatedAt`.
+- **Projection**: all attributes, because listing cards and detail drawers need
+  grade, scorecard, proof metadata, seller, price, and logistics text.
+- **Sparse**: only C2C listing and checkout records include marketplace status.
+
 ## Access Pattern Mapping
 
 | Pattern # | Description | Type | Peak RPS | Items Returned | Avg Item Size | Table/GSI Used | DynamoDB Operation | Notes |
@@ -77,6 +91,10 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 | AP7 | Append green credit event | PutItem | 8 | - | 1 KB | NexTurnTable | `PutItem(pk = CUSTOMER#id, sk = CREDIT#...)` | Append-only ledger |
 | AP8 | List green credit activity | Query | 8 | 20 | 1 KB | CustomerActivityIndex | `Query(customerId = id)` | Filter by entity type in app |
 | AP9 | List low-return purchase alternatives | Query | 10 | 6 | 1 KB | NexTurnTable | `Query(pk = CUSTOMER#id, begins_with(sk, FIT#))` | Supports predictive return prevention |
+| AP10 | List active C2C marketplace listings | Query | 30 | 50 | 3 KB | MarketplaceIndex | `Query(marketplaceStatus = LISTING#ACTIVE)` | Hero listings above public API feed |
+| AP11 | Create C2C listing | PutItem | 8 | - | 4 KB | NexTurnTable | `PutItem(pk = LISTING#id, sk = PROFILE)` | Seller keeps item at home |
+| AP12 | Simulate C2C checkout | TransactWrite | 8 | - | 2 KB | NexTurnTable | `Put receipt + update listing sold` | Buyer payment split and pickup scheduled |
+| AP13 | Get listing detail | GetItem | 25 | 1 | 4 KB | NexTurnTable | `GetItem(pk = LISTING#id, sk = PROFILE)` | Proof, scorecard, price, logistics |
 
 ## Hot Partition Analysis
 
@@ -86,6 +104,8 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
   customer remains below prototype limits.
 - `routeStatus` can become skewed in production. If `resell#READY` becomes hot,
   shard the route status as `resell#READY#<0-9>` and query shards in parallel.
+- `LISTING#ACTIVE` can become hot in a production marketplace. The next step is
+  category or locality sharding such as `LISTING#ACTIVE#audio#blr`.
 
 ## Trade-offs
 
@@ -95,3 +115,5 @@ DynamoDB stores keys, derived scan signals, and customer-facing decisions.
 - **Media in S3** keeps DynamoDB item sizes small and predictable.
 - **On-demand billing** keeps the free-tier prototype safer than over-tuned
   provisioned capacity.
+- **MarketplaceIndex** makes active C2C inventory visible to every signed-in
+  buyer while preserving the no-warehouse rule in the listing record itself.
