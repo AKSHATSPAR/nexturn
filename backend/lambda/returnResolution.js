@@ -608,6 +608,23 @@ async function selectRoute(routeId, event) {
 }
 
 async function evaluateScan(body, event) {
+  /*
+   * Stage 2 AI roadmap hooks, intentionally comment-only for this prototype:
+   *
+   * Feature label: Predictive Return Prevention (Before purchase is made)
+   * Feature label: Multi-Routing AI (Automatically deciding if an item goes to Refurbished, Donated, or Recycled streams if it fails C2C standards)
+   *
+   * Predictive Return Prevention (Before purchase is made)
+   * - Planned pre-purchase hook that compares customer preference, size,
+   *   variant, and return-history signals against product metadata before the
+   *   customer checks out.
+   *
+   * Multi-Routing AI (Automatically deciding if an item goes to Refurbished,
+   * Donated, or Recycled streams if it fails C2C standards)
+   * - Planned fallback after low confidence, high damage evidence, identity
+   *   mismatch, or failed pickup review.
+   * - Alternative streams: REFURBISHED, DONATED, RECYCLED.
+   */
   const identity = getIdentity(event);
   const customerCase = caseForIdentity(identity);
   const { aiAnalysis, media } = await analyzeReturnImage({

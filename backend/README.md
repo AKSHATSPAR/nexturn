@@ -55,6 +55,22 @@ a broken or visually distant product receives a low grade such as `C`, not an
 unearned high-confidence `A`. A colour or variant mismatch also prevents an `A`
 grade and forces the flow into manual pickup review before payment can open.
 
+## Stage 2 AI Extension Notes
+
+The Lambda grading flow is intentionally structured so two future AI features can
+be added without changing the current customer promise:
+
+- Feature label: Predictive Return Prevention (Before purchase is made)
+- Feature label: Multi-Routing AI (Automatically deciding if an item goes to Refurbished, Donated, or Recycled streams if it fails C2C standards)
+- **Predictive Return Prevention (Before purchase is made)** can run before
+  checkout by comparing customer preference, size, variant, and return-history
+  signals against the product being considered.
+- **Multi-Routing AI (Automatically deciding if an item goes to Refurbished,
+  Donated, or Recycled streams if it fails C2C standards)** can run after the
+  preliminary grade or pickup review. If confidence is low, damage is high, or
+  the item fails direct resale standards, NexTurn can move it to the right
+  alternative stream instead of exposing it to buyers.
+
 ## Local Invocation Fixtures
 
 The `backend/events/` folder contains API Gateway v2-shaped sample events for

@@ -51,6 +51,51 @@ sides of one unified account:
   interest records.
 - S3 media persistence and Rekognition permissions in the AWS CDK stack.
 
+## Stage 2 AI Hooks
+
+These are documented as expansion hooks in the current architecture, not as
+customer-facing payment or logistics automation in this prototype:
+
+- Feature label: Predictive Return Prevention (Before purchase is made)
+- Feature label: Multi-Routing AI (Automatically deciding if an item goes to Refurbished, Donated, or Recycled streams if it fails C2C standards)
+- **Predictive Return Prevention (Before purchase is made)**: before checkout,
+  NexTurn can compare a shopper's fit, size, variant, return, and preference
+  history against the current product metadata to warn about likely mismatch and
+  suggest a safer second-life or exchange option.
+- **Multi-Routing AI (Automatically deciding if an item goes to Refurbished,
+  Donated, or Recycled streams if it fails C2C standards)**: if the image proof,
+  confidence score, damage evidence, or pickup review fails the direct C2C
+  threshold, the same grading policy can route the item to an alternative stream
+  instead of listing it in the marketplace.
+
+## Deployed Screenshots
+
+Captured from the live AWS deployment:
+https://l5f3ovamaj.execute-api.us-east-1.amazonaws.com/
+
+### Overview
+
+![NexTurn deployed overview](docs/screenshots/deployed-overview.png)
+
+### Second-life shop
+
+![NexTurn deployed marketplace](docs/screenshots/deployed-marketplace.png)
+
+### Listing proof drawer
+
+![NexTurn deployed listing detail](docs/screenshots/deployed-listing-detail.png)
+
+### AI grading outcomes
+
+The return scan flow blocks wrong-product uploads, downgrades variant mismatches,
+and keeps every grade preliminary until pickup review.
+
+![NexTurn blocks a wrong product upload](docs/screenshots/deployed-ai-mismatch-shoes.png)
+
+![NexTurn flags a variant review before listing](docs/screenshots/deployed-ai-variant-review.png)
+
+![NexTurn blocks a cross-order mismatch](docs/screenshots/deployed-ai-cross-order-mismatch.png)
+
 ## Architecture
 
 ```mermaid
