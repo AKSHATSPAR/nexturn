@@ -189,6 +189,16 @@
 .seller-upload-panel,
 .evaluation-panel {
   min-height: 520px;
+  padding: 24px;
+}
+
+.order-history-panel .panel-heading,
+.seller-upload-panel .panel-heading {
+  padding: 0;
+}
+
+.order-history-panel .panel-heading + .order-proof-list {
+  margin-top: 18px;
 }
 
 .order-proof-list {
@@ -371,6 +381,7 @@
   align-content: center;
   justify-items: start;
   gap: 12px;
+  padding: 30px;
 }
 
 .evaluation-panel.empty h2,
@@ -379,6 +390,7 @@
 }
 
 .evaluation-panel.empty p {
+  max-width: 680px;
   color: var(--muted);
   line-height: 1.55;
 }
@@ -863,6 +875,13 @@
 
   .c2c-workspace {
     padding: 22px 14px;
+  }
+
+  .order-history-panel,
+  .seller-upload-panel,
+  .evaluation-panel,
+  .evaluation-panel.empty {
+    padding: 16px;
   }
 
   .studio {
@@ -3461,7 +3480,13 @@ h1 {
   }
 
   .studio.c2c-workspace {
+    width: 100%;
+    min-width: 0;
     padding: 22px 16px 28px;
+  }
+
+  .sell-grid {
+    grid-template-columns: 1fr;
   }
 
   .c2c-page-header h1 {
@@ -3480,6 +3505,13 @@ h1 {
 
   .c2c-page-header p {
     font-size: 16px;
+  }
+
+  .order-history-panel,
+  .seller-upload-panel,
+  .evaluation-panel,
+  .evaluation-panel.empty {
+    padding: 16px;
   }
 
   .listing-image-pair img {
