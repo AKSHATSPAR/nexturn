@@ -3248,8 +3248,8 @@ h1 {
 
 .c2c-page-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 840px);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
   margin: 8px 0 30px;
 }
@@ -3259,20 +3259,22 @@ h1 {
 }
 
 .c2c-page-header h1 {
-  max-width: 780px;
+  max-width: 1160px;
   margin-top: 8px;
-  font-size: clamp(36px, 4.2vw, 58px);
+  font-size: clamp(36px, 3.7vw, 56px);
   line-height: 1.06;
 }
 
 .c2c-page-header p {
-  max-width: 980px;
+  max-width: 1280px;
   font-size: 18px;
-  line-height: 1.58;
+  line-height: 1.52;
 }
 
 .c2c-page-header .market-toolbar {
-  justify-self: end;
+  justify-self: stretch;
+  width: 100%;
+  max-width: none;
 }
 
 .c2c-workspace .metric-grid {
@@ -3292,7 +3294,7 @@ h1 {
 }
 
 .c2c-metric small {
-  max-width: 32ch;
+  max-width: none;
   font-size: 14px;
   line-height: 1.45;
 }
@@ -3312,7 +3314,7 @@ h1 {
 }
 
 .c2c-journey small {
-  max-width: 62ch;
+  max-width: none;
   font-size: 15px;
 }
 
@@ -3323,7 +3325,13 @@ h1 {
 
 .market-toolbar {
   gap: 10px;
-  max-width: 840px;
+  max-width: none;
+  justify-content: flex-start;
+}
+
+.market-search {
+  flex: 1 1 440px;
+  max-width: 620px;
 }
 
 .market-search,
