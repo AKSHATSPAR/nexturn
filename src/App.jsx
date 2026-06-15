@@ -1010,6 +1010,7 @@ function ImpactView({ marketplace, queueItems }) {
 }
 
 function SettingsView({
+  greenCredits,
   isSavingProfile,
   onProfileChange,
   onProfileSave,
@@ -1020,6 +1021,7 @@ function SettingsView({
   theme,
 }) {
   const selectedLocationValue = `${profileDraft.address?.city ?? defaultBuyerLocation.city}|${profileDraft.address?.state ?? defaultBuyerLocation.state}`;
+  const greenCreditCashback = formatGreenCashback(greenCredits);
 
   return (
     <main className="studio workspace-page c2c-workspace">
@@ -1028,6 +1030,15 @@ function SettingsView({
         title="Address unlocks buying and selling"
         description="NexTurn uses saved buyer and seller addresses to estimate delivery fees. No live location is required, and India-only addresses are accepted."
       />
+      <section className="profile-credit-card" aria-label="Green credits balance">
+        <span>
+          <Leaf size={22} />
+          Green credits
+        </span>
+        <strong>{greenCredits} credits</strong>
+        <p>{greenCreditCashback} Amazon Wallet value after pickup review.</p>
+        <small>2 credits = ₹1 cashback once a second-life transaction is verified.</small>
+      </section>
       <section className="panel settings-panel c2c-settings">
         <div className="settings-row">
           <span>
@@ -1860,6 +1871,7 @@ export function App() {
       {activeView === "impact" && <ImpactView marketplace={marketplace} queueItems={queueItems} />}
       {activeView === "settings" && (
         <SettingsView
+          greenCredits={greenCreditBalance}
           isSavingProfile={isSavingProfile}
           onProfileChange={updateProfileDraft}
           onProfileSave={handleSaveProfile}
