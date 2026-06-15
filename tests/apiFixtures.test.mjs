@@ -161,9 +161,17 @@ test("c2c marketplace injects ai-graded listings into a large public feed", asyn
   const body = JSON.parse(response.body);
 
   assert.equal(response.statusCode, 200);
-  assert.ok(body.heroListings.length >= 3);
+  assert.ok(body.heroListings.length >= 2);
   assert.ok(body.genericItems.length >= 100);
   assert.equal(body.heroListings[0].badge, "AI Graded & Amazon Verified");
+  assert.equal(
+    body.heroListings.some(
+      (listing) =>
+        listing.sellerName === "Maya R." &&
+        listing.item?.title === "iPad Mini 2021 Starlight",
+    ),
+    false,
+  );
   assert.match(body.marketplaceRule, /no warehouse/i);
 });
 

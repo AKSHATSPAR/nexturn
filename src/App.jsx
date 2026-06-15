@@ -41,12 +41,22 @@ import { calculateDeliveryFee, formatMarketplaceCurrency, normalizeCustomerProfi
 
 const navItems = [
   { id: "home", label: "Overview", Icon: Home },
-  { id: "sell", label: "Sell / Return items", Icon: PackageOpen },
-  { id: "marketplace", label: "Buy / Marketplace", Icon: Store },
+  { id: "sell", label: "Return items", Icon: PackageOpen },
+  { id: "marketplace", label: "Second-life shop", Icon: Store },
   { id: "listings", label: "My listings", Icon: ReceiptText },
   { id: "impact", label: "Impact", Icon: Leaf },
   { id: "settings", label: "Settings", Icon: Settings },
 ];
+
+const greenCreditCashbackFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 2,
+});
+
+function formatGreenCashback(points = 0) {
+  return greenCreditCashbackFormatter.format(Number(points ?? 0) / 2);
+}
 
 const gradeRank = {
   A: 5,
@@ -98,7 +108,7 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
   return (
     <section className="auth-card" aria-label="Customer account">
       <span>{auth.config?.enabled ? "Unified account" : "Auth unavailable"}</span>
-      <strong>Sign in to buy or sell</strong>
+      <strong>Sign in to continue</strong>
       {auth.error && <small className="auth-error">{auth.error}</small>}
       <button type="button" disabled={!auth.config?.enabled} onClick={onSignIn}>
         <LogIn size={14} /> Sign in
@@ -213,7 +223,7 @@ function Sidebar({
           <strong>
             <Leaf size={22} /> {greenCredits}
           </strong>
-          <small>Earned from verified second-life listing and queue actions.</small>
+          <small>{formatGreenCashback(greenCredits)} Amazon Wallet value after pickup review.</small>
         </section>
       </div>
     </aside>
@@ -279,14 +289,14 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Direct customer-to-customer commerce"
-        title="Returned items stay with people, not warehouses"
-        description="NexTurn uses Amazon order history as authenticity proof, grades the real item photo with AWS AI evidence, then lists it directly for another customer."
+        title="Returns move to the next customer"
+        description="Order proof, AWS image evidence, and pickup review help every usable product find a second life without a warehouse hop."
       />
       <div className="metric-grid">
         <MetricCard
           label="Unified account"
           value={isSignedIn ? "Active" : "Locked"}
-          detail="One account can sell and buy"
+          detail="One profile can return, list, browse, and join queues"
           Icon={ShieldCheck}
         />
         <MetricCard
@@ -296,9 +306,9 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
           Icon={Boxes}
         />
         <MetricCard
-          label="Marketplace"
-          value={`${activeHeroCount}+ hero`}
-          detail="AI graded listings injected above generic feed"
+          label="Second-life shop"
+          value={`${activeHeroCount} verified`}
+          detail="Proof-backed listings sit above the broader catalog"
           Icon={Store}
         />
       </div>
@@ -306,16 +316,16 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
         <button type="button" onClick={() => onNavigate("sell")}>
           <PackageOpen size={24} />
           <span>
-            <strong>Sell from order history</strong>
-            <small>Pick a verified purchase, upload the real item, get grade and price.</small>
+            <strong>Return from order history</strong>
+            <small>Pick a verified purchase, upload the real item, and receive a preliminary resale value.</small>
           </span>
           <ChevronRight size={18} />
         </button>
         <button type="button" onClick={() => onNavigate("marketplace")}>
           <ShoppingBag size={24} />
           <span>
-            <strong>Buy AI-graded second-life items</strong>
-            <small>See proof, preliminary AI review, seller location, and queue rules.</small>
+            <strong>Browse verified second-life deals</strong>
+            <small>Compare proof photos, seller location, queue status, and wallet-credit incentives.</small>
           </span>
           <ChevronRight size={18} />
         </button>
@@ -456,7 +466,7 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
           ? "Cannot list mismatched item"
           : isPublishing
             ? "Publishing..."
-            : "List on NexTurn Marketplace"}
+            : "List in second-life shop"}
       </button>
     </section>
   );
@@ -509,13 +519,13 @@ function SellHubView({
     return (
       <main className="studio workspace-page c2c-workspace">
         <PageHeader
-          eyebrow="Sell / Return items"
-          title="Sign in before listing a product"
-          description="Selling requires a verified NexTurn account so the item can be tied to order history and a seller identity."
+          eyebrow="Return items"
+          title="Sign in before returning an item"
+          description="Returning into NexTurn requires a verified account so the product can be tied to order history and seller identity."
         />
         <SignInGate
           title="Seller actions are locked"
-          detail="A public visitor can browse the marketplace, but listing an item requires authentication."
+          detail="A public visitor can browse the shop, but returning or listing an item requires authentication."
         />
       </main>
     );
@@ -525,7 +535,7 @@ function SellHubView({
     return (
       <main className="studio workspace-page c2c-workspace">
         <PageHeader
-          eyebrow="Sell / Return items"
+          eyebrow="Return items"
           title="Address required before listing"
           description="Seller pickup fees and buyer delivery estimates depend on the address saved in your NexTurn profile."
         />
@@ -537,9 +547,9 @@ function SellHubView({
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
-        eyebrow="Sell / Return items"
+        eyebrow="Return items"
         title="Choose a verified Amazon purchase"
-        description="The connected order history below acts as the proof-of-authenticity anchor. The uploaded item photo is compared against this order proof before pricing."
+        description="Choose a purchase, upload today’s item photo, and get a preliminary resale value before buyer pickup review."
       />
 
       <div className="sell-grid">
@@ -623,13 +633,14 @@ function SellHubView({
 function HeroListingCard({ listing, onAddToCart, onOpen, signedInCustomerId }) {
   const queueLabel = queueLabelForListing(listing, signedInCustomerId);
   const queueTone = listing.queueFilled ? "amber" : "green";
+  const buyerCredits = Number(listing.greenCredits?.buyerQueue ?? 0);
 
   return (
     <article className={`hero-listing-card ${listing.queueFilled ? "queue-filled" : ""}`}>
       <button className="listing-image-button" type="button" onClick={() => onOpen(listing)}>
         <ListingImagePair listing={listing} />
       </button>
-      <span className="listing-badge">{listing.badge}</span>
+      <span className="listing-badge">Verified proof</span>
       <span className="queue-status-badge">
         <Badge tone={queueTone}>{queueLabel}</Badge>
       </span>
@@ -643,7 +654,7 @@ function HeroListingCard({ listing, onAddToCart, onOpen, signedInCustomerId }) {
         </small>
         <small>Purchased {listing.item.purchaseDate}</small>
         <small>
-          +{listing.greenCredits?.buyerQueue ?? 0} buyer green credits after pickup review
+          {buyerCredits} green credits = {formatGreenCashback(buyerCredits)} cashback
         </small>
       </div>
       <footer>
@@ -773,9 +784,9 @@ function MarketplaceView({
   return (
     <main className="studio workspace-page c2c-workspace marketplace-page">
       <PageHeader
-        eyebrow="Buy / Marketplace"
+        eyebrow="Second-life shop"
         title="Second-life items with proof you can inspect"
-        description="Join the buyer queue for AI-reviewed listings. Actual payment unlocks only after pickup verification confirms item identity, colour, and condition."
+        description="Browse verified second-life listings. Queue first, pay only after pickup review confirms identity, colour, and condition."
         action={
           <div className="market-toolbar">
             <label className="market-search">
@@ -783,7 +794,7 @@ function MarketplaceView({
               <input
                 type="search"
                 value={searchTerm}
-                placeholder="Search marketplace"
+                placeholder="Search second-life shop"
                 onChange={(event) => onSearch(event.target.value)}
               />
             </label>
@@ -859,7 +870,7 @@ function MarketplaceView({
 
       <section className="generic-market-section">
         <div className="section-heading">
-          <h2>Marketplace background feed</h2>
+          <h2>Broader second-life catalog</h2>
           <Badge tone="neutral">
             {isLoading ? "Loading" : `${filteredGeneric.length} public API items`}
           </Badge>
@@ -926,7 +937,7 @@ function MyListingsView({ listings, onAddToCart, onOpenListing, signedInCustomer
         <section className="panel sign-in-gate">
           <PackageOpen size={24} />
           <h2>No active listings yet</h2>
-          <p>Publish an item from the Sell / Return hub and it will appear here.</p>
+          <p>Publish an item from Return items and it will appear here.</p>
         </section>
       )}
     </main>
@@ -950,13 +961,14 @@ function ImpactView({ marketplace, queueItems }) {
       (listing.queueFilled ? Number(listing.greenCredits?.buyerQueue ?? 0) : 0),
     0,
   );
+  const greenCreditCashback = formatGreenCashback(greenCreditsInPlay);
 
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Impact"
-        title="Impact updates from real marketplace events"
-        description="The impact tab is useful only if it reflects actions: listings created from order proof, buyers joining queues, pickup reviews, and warehouse hops avoided."
+        title="Impact updates from real second-life events"
+        description="Impact updates when order-proof listings are created, buyers join queues, and products avoid warehouse return hops."
       />
       <div className="metric-grid">
         <MetricCard
@@ -973,25 +985,24 @@ function ImpactView({ marketplace, queueItems }) {
         />
         <MetricCard
           label="Green credits"
-          value={greenCreditsInPlay}
-          detail="Seller credits plus buyer credits pending pickup review"
+          value={`${greenCreditsInPlay} credits`}
+          detail={`${greenCreditCashback} Amazon Wallet value after pickup review`}
           Icon={Leaf}
         />
         <MetricCard
           label="Estimated CO2e saved"
           value={`${estimatedEmissionsSaved} kg`}
-          detail="Prototype estimate from item weight and avoided handling"
+          detail="Estimated from item weight and avoided return handling"
           Icon={BadgeCheck}
         />
       </div>
       <section className="panel impact-explainer">
         <h2>What changes these numbers?</h2>
         <p>
-          A seller listing increases order-proof inventory. A buyer joining the
-          queue increases demand without collecting payment. Pickup verification
-          would unlock payment and confirm the final item value. In production,
-          these events would be written to a green-credit ledger and recalculated
-          from actual pickup, delivery, resale, and avoided-disposal outcomes.
+          A seller listing adds verified inventory. A buyer queue claim signals
+          demand without charging the buyer. Green credits convert at 2 credits =
+          ₹1 Amazon Wallet cashback once pickup review confirms the item is
+          actually reused.
         </p>
       </section>
     </main>
@@ -1194,10 +1205,11 @@ function ListingDrawer({
               <p>
                 Seller earns {listing.greenCredits?.sellerListing ?? 0} credits for
                 listing a verified second-life item. Buyer earns{" "}
-                {listing.greenCredits?.buyerQueue ?? 0} credits after pickup review
-                confirms the item stays in circulation.
+                {listing.greenCredits?.buyerQueue ?? 0} credits after pickup review.
+                Credits convert at 2 credits = ₹1 Amazon Wallet cashback.
               </p>
               <p>
+                Buyer cashback value: {formatGreenCashback(listing.greenCredits?.buyerQueue ?? 0)}.
                 Estimated avoided impact: {listing.greenCredits?.estimatedCo2eKg ?? 0} kg CO2e.
               </p>
             </section>
@@ -1265,8 +1277,8 @@ function ListingDrawer({
                 <ShieldCheck size={22} />
                 <strong>Queue filled</strong>
                 <span>
-                  Another buyer is first in line. Use the queue filter to find listings
-                  still open for pickup-review priority.
+              Another buyer is first in line. Use the queue filter to find listings
+                  still open for review priority.
                 </span>
               </section>
             ) : (
@@ -1308,14 +1320,14 @@ function ListingDrawer({
           <div className="drawer-body">
             <img className="drawer-hero-image" src={listing.image} alt="" />
             <div className="listing-price-block">
-              <span>Public API marketplace item</span>
+              <span>Catalog item</span>
               <strong>{formatMarketplaceCurrency(listing.price)}</strong>
               <small>
                 {listing.category} · {listing.sellerCity}, {listing.sellerState}
               </small>
             </div>
             <p className="drawer-copy">
-              This item fills the marketplace background from a public API. It can be
+              This item fills the broader shop catalog from a public API. It can be
               added to cart for browsing, while full order proof and AI grading are
               available on NexTurn verified listings.
             </p>
@@ -1394,7 +1406,7 @@ function CartDrawer({ buyerLocation, cartItems, onClose, onOpenListing, onRemove
             <section className="panel sign-in-gate empty-cart">
               <ShoppingCart size={24} />
               <h2>Your cart is empty</h2>
-              <p>Add verified listings or marketplace items while browsing.</p>
+              <p>Add verified listings or catalog items while browsing.</p>
             </section>
           )}
           <section className="checkout-split">
@@ -1426,9 +1438,9 @@ function CompanyFooter() {
   return (
     <footer className="company-footer">
       <span>NexTurn Sustainable Commerce Labs</span>
-      <span>India C2C network · Built for Amazon-integrated resale workflows</span>
+      <span>India C2C network · Built for Amazon-integrated return workflows</span>
       <a href="mailto:support@nexturn.example">support@nexturn.example</a>
-      <span>© 2026 NexTurn. Demo marketplace, no real payments.</span>
+      <span>© 2026 NexTurn. Payment capture stays locked until pickup review.</span>
     </footer>
   );
 }
@@ -1652,7 +1664,7 @@ export function App() {
     }
 
     setUploading(true);
-    setListingMessage("Publishing listing to the global NexTurn marketplace...");
+    setListingMessage("Publishing listing to the NexTurn second-life shop...");
     try {
       const result = await createC2CListing(selectedFile, selectedOrder.id, normalizedProfile);
       setListingMessage(result.customerMessage ?? "Listing published.");
@@ -1721,7 +1733,7 @@ export function App() {
 
   function handleAddToCart(item) {
     if (!isSignedIn) {
-      setListingMessage("Sign in before saving or queuing marketplace items.");
+      setListingMessage("Sign in before saving or queuing shop items.");
       return;
     }
     setCartItems((current) =>
