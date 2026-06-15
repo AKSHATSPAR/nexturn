@@ -45,7 +45,7 @@ const navItems = [
   { id: "marketplace", label: "Second-life shop", Icon: Store },
   { id: "listings", label: "My listings", Icon: ReceiptText },
   { id: "impact", label: "Impact", Icon: Leaf },
-  { id: "settings", label: "Settings", Icon: Settings },
+  { id: "settings", label: "Profile", Icon: Settings },
 ];
 
 const greenCreditCashbackFormatter = new Intl.NumberFormat("en-IN", {
@@ -95,7 +95,7 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
   if (auth.session) {
     return (
       <section className="auth-card signed-in" aria-label="Customer account">
-        <span>Buyer and seller</span>
+        <span>Unified account</span>
         <strong>{auth.session.user.name}</strong>
         <small>{auth.session.user.email}</small>
         <button type="button" onClick={onSignOut}>
@@ -107,8 +107,11 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
 
   return (
     <section className="auth-card" aria-label="Customer account">
-      <span>{auth.config?.enabled ? "Unified account" : "Auth unavailable"}</span>
-      <strong>Sign in to continue</strong>
+      <div className="auth-hero-mark">
+        <ShieldCheck size={18} />
+      </div>
+      <span>{auth.config?.enabled ? "NexTurn account" : "Auth unavailable"}</span>
+      <strong>Sign in</strong>
       {auth.error && <small className="auth-error">{auth.error}</small>}
       <button type="button" disabled={!auth.config?.enabled} onClick={onSignIn}>
         <LogIn size={14} /> Sign in
@@ -119,7 +122,7 @@ function AuthCard({ auth, onGoogleSignIn, onSignIn, onSignOut }) {
         disabled={!auth.config?.googleEnabled}
         onClick={onGoogleSignIn}
       >
-        G Google
+        <span className="google-mark">G</span> Google
       </button>
     </section>
   );
@@ -260,7 +263,7 @@ function SignInGate({ title, detail }) {
       <ShieldCheck size={24} />
       <h2>{title}</h2>
       <p>{detail}</p>
-      <small>Google sign-in or email sign-in unlocks the same Buyer + Seller account.</small>
+      <small>One account unlocks return, queue, and profile actions.</small>
     </section>
   );
 }
@@ -276,7 +279,7 @@ function ProfileGate({ onOpenSettings }) {
         live location.
       </p>
       <button className="primary-action" type="button" onClick={onOpenSettings}>
-        <Settings size={17} /> Open profile
+        <Settings size={17} /> Profile
       </button>
     </section>
   );
@@ -288,27 +291,27 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
   return (
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
-        eyebrow="Direct customer-to-customer commerce"
-        title="Returns move to the next customer"
-        description="Order proof, AWS image evidence, and pickup review help every usable product find a second life without a warehouse hop."
+        eyebrow="C2C commerce"
+        title="Second-life commerce"
+        description="Order proof, AI review, pickup verification, and no warehouse hop."
       />
       <div className="metric-grid">
         <MetricCard
           label="Unified account"
           value={isSignedIn ? "Active" : "Locked"}
-          detail="One profile can return, list, browse, and join queues"
+          detail="One profile to return, list, browse, and queue"
           Icon={ShieldCheck}
         />
         <MetricCard
           label="Order proof"
           value={`${orders.length || 5} items`}
-          detail="Connected order history anchors authenticity"
+          detail="Order history anchors authenticity"
           Icon={Boxes}
         />
         <MetricCard
-          label="Second-life shop"
+          label="Shop"
           value={`${activeHeroCount} verified`}
-          detail="Proof-backed listings sit above the broader catalog"
+          detail="AI-graded listings lead the catalog"
           Icon={Store}
         />
       </div>
@@ -316,16 +319,16 @@ function OverviewView({ isSignedIn, marketplace, onNavigate, orders }) {
         <button type="button" onClick={() => onNavigate("sell")}>
           <PackageOpen size={24} />
           <span>
-            <strong>Return from order history</strong>
-            <small>Pick a verified purchase, upload the real item, and receive a preliminary resale value.</small>
+            <strong>Return item</strong>
+            <small>Pick an order, upload the item, receive value.</small>
           </span>
           <ChevronRight size={18} />
         </button>
         <button type="button" onClick={() => onNavigate("marketplace")}>
           <ShoppingBag size={24} />
           <span>
-            <strong>Browse verified second-life deals</strong>
-            <small>Compare proof photos, seller location, queue status, and wallet-credit incentives.</small>
+            <strong>Shop proofed deals</strong>
+            <small>Compare photos, location, queue, and credits.</small>
           </span>
           <ChevronRight size={18} />
         </button>
@@ -410,10 +413,9 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
     return (
       <section className="panel evaluation-panel empty">
         <SparkleLine />
-        <h2>AI grade appears here after upload</h2>
+        <h2>Grade appears here</h2>
         <p>
-          Upload the real item photo. AWS Rekognition checks identity evidence and
-          NexTurn calculates a preliminary grade and value before pickup review.
+          Upload the item photo. NexTurn calculates preliminary value before pickup review.
         </p>
       </section>
     );
@@ -426,7 +428,7 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
     <section className={`panel evaluation-panel ${isBlocked ? "blocked" : ""}`}>
       <div className="evaluation-heading">
         <div>
-          <span>{isBlocked ? "Product identity mismatch" : "Preliminary AI review"}</span>
+          <span>{isBlocked ? "Identity mismatch" : "AI review"}</span>
           <strong>{listing.grade.grade}</strong>
           <small>{listing.grade.summary}</small>
         </div>
@@ -436,24 +438,23 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
       </div>
       {isBlocked && (
         <p className="identity-block-note">
-          {listing.blockingReason} NexTurn will not list this item until the uploaded
-          photo matches the selected Amazon order.
+          {listing.blockingReason} NexTurn will not list this until the upload
+          matches the selected order.
         </p>
       )}
       <AiEvidenceSummary aiAnalysis={evaluation.aiAnalysis} />
       {evaluation.aiAnalysis?.summary && <p className="ai-summary-note">{evaluation.aiAnalysis.summary}</p>}
       <div className="price-split">
-        <span>{isBlocked ? "Listing status" : "Preliminary resale value"}</span>
+        <span>{isBlocked ? "Status" : "Preliminary value"}</span>
         <strong>{isBlocked ? "Blocked" : formatMarketplaceCurrency(listing.price)}</strong>
         <small>
           {isBlocked
-            ? "Wrong-product uploads are stopped before marketplace publishing."
-            : "Final payable value opens only after manual pickup review."}
+            ? "Wrong-product uploads are stopped."
+            : "Payment opens after pickup review."}
         </small>
       </div>
       <p className="seller-hold-note">
-        This AI grade is preliminary and can change. You keep the item at your
-        house; buyers join a queue, and payment unlocks only after pickup review.
+        Preliminary grade. You keep the item until pickup review.
       </p>
       <button
         className="primary-action"
@@ -463,10 +464,10 @@ function EvaluationPanel({ evaluation, isPublishing, onPublish }) {
       >
         <Store size={17} />{" "}
         {isBlocked
-          ? "Cannot list mismatched item"
+          ? "Blocked"
           : isPublishing
-            ? "Publishing..."
-            : "List in second-life shop"}
+            ? "Listing..."
+            : "List"}
       </button>
     </section>
   );
@@ -521,11 +522,11 @@ function SellHubView({
         <PageHeader
           eyebrow="Return items"
           title="Sign in before returning an item"
-          description="Returning into NexTurn requires a verified account so the product can be tied to order history and seller identity."
+          description="A verified account ties returns to order proof and seller identity."
         />
         <SignInGate
           title="Seller actions are locked"
-          detail="A public visitor can browse the shop, but returning or listing an item requires authentication."
+          detail="You can browse the shop without sign-in. Returning needs an account."
         />
       </main>
     );
@@ -537,7 +538,7 @@ function SellHubView({
         <PageHeader
           eyebrow="Return items"
           title="Address required before listing"
-          description="Seller pickup fees and buyer delivery estimates depend on the address saved in your NexTurn profile."
+          description="Pickup and delivery estimates use your saved India address."
         />
         <ProfileGate onOpenSettings={onOpenProfile} />
       </main>
@@ -548,8 +549,8 @@ function SellHubView({
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Return items"
-        title="Choose a verified Amazon purchase"
-        description="Choose a purchase, upload today’s item photo, and get a preliminary resale value before buyer pickup review."
+        title="Choose an order"
+        description="Upload today’s item photo for preliminary value before pickup review."
       />
 
       <div className="sell-grid">
@@ -589,9 +590,7 @@ function SellHubView({
             <p className="muted-copy">Select an order before uploading the resale photo.</p>
           )}
           <p className="condition-hint-copy">
-            No manual condition labels are used. NexTurn compares the uploaded photo
-            against the order proof image, product metadata, and colour/variant evidence.
-            The grade is preliminary until pickup review.
+            NexTurn compares the upload with order proof, metadata, and colour evidence.
           </p>
           <label className="upload-dropzone">
             <input
@@ -605,7 +604,7 @@ function SellHubView({
             ) : (
               <span>
                 <Upload size={26} />
-                Upload real-time item photo
+                Upload photo
               </span>
             )}
           </label>
@@ -615,7 +614,7 @@ function SellHubView({
             disabled={!selectedOrder || isUploading}
             onClick={onEvaluate}
           >
-            {isUploading ? "Running AI grade..." : "Run AI grade"}
+            {isUploading ? "Scanning..." : "Run grade"}
           </button>
           {listingMessage && <p className="status-copy">{listingMessage}</p>}
         </section>
@@ -785,8 +784,8 @@ function MarketplaceView({
     <main className="studio workspace-page c2c-workspace marketplace-page">
       <PageHeader
         eyebrow="Second-life shop"
-        title="Second-life items with proof you can inspect"
-        description="Browse verified second-life listings. Queue first, pay only after pickup review confirms identity, colour, and condition."
+        title="Verified finds"
+        description="Browse verified listings. Queue first; pay after pickup review."
         action={
           <div className="market-toolbar">
             <label className="market-search">
@@ -852,7 +851,7 @@ function MarketplaceView({
 
       <section className="hero-market-section">
         <div className="section-heading">
-          <h2>AI Graded & Amazon Verified</h2>
+          <h2>AI graded</h2>
           <Badge>{filteredHero.length} live listings</Badge>
         </div>
         <div className="hero-listing-grid">
@@ -870,7 +869,7 @@ function MarketplaceView({
 
       <section className="generic-market-section">
         <div className="section-heading">
-          <h2>Broader second-life catalog</h2>
+          <h2>Catalog</h2>
           <Badge tone="neutral">
             {isLoading ? "Loading" : `${filteredGeneric.length} public API items`}
           </Badge>
@@ -901,7 +900,7 @@ function MarketplaceView({
           </label>
           <div>
             <button type="button" disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)}>
-              <ChevronLeft size={16} /> Previous
+              <ChevronLeft size={16} /> Prev
             </button>
             <button type="button" disabled={safePage >= pageCount} onClick={() => onPageChange(safePage + 1)}>
               Next <ChevronRight size={16} />
@@ -918,8 +917,8 @@ function MyListingsView({ listings, onAddToCart, onOpenListing, signedInCustomer
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="My listings"
-        title="Items you are holding at home"
-        description="NexTurn coordinates pickup after a buyer joins the queue and pickup verification is ready. Until then, the product remains with the seller."
+        title="Held at home"
+        description="Pickup starts after a buyer queues and review is ready."
       />
       {listings.length ? (
         <div className="hero-listing-grid compact">
@@ -967,8 +966,8 @@ function ImpactView({ marketplace, queueItems }) {
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Impact"
-        title="Impact updates from real second-life events"
-        description="Impact updates when order-proof listings are created, buyers join queues, and products avoid warehouse return hops."
+        title="Second-life impact"
+        description="Credits update when items are listed, queued, and reused."
       />
       <div className="metric-grid">
         <MetricCard
@@ -1027,8 +1026,8 @@ function SettingsView({
     <main className="studio workspace-page c2c-workspace">
       <PageHeader
         eyebrow="Profile"
-        title="Address unlocks buying and selling"
-        description="NexTurn uses saved buyer and seller addresses to estimate delivery fees. No live location is required, and India-only addresses are accepted."
+        title="Profile"
+        description="Save an India address to return, queue, and estimate delivery."
       />
       <section className="profile-credit-card" aria-label="Green credits balance">
         <span>
@@ -1176,6 +1175,17 @@ function ListingDrawer({
     weightKg: listing.item?.estimatedWeightKg,
   });
   const deliveryFee = delivery.allowed ? delivery.fee : Number(listing.deliveryFee ?? 0);
+  const queueActionLabel = !isSignedIn
+    ? "Sign in"
+    : !profileComplete
+      ? "Add address"
+      : isOwnListing
+        ? "Your listing"
+        : queueFilledByOther
+          ? "Queue filled"
+          : queueState?.status === "loading"
+            ? "Joining..."
+            : "Join queue";
 
   return (
     <div className="drawer-backdrop" role="presentation" onClick={onClose}>
@@ -1311,17 +1321,7 @@ function ListingDrawer({
                   onClick={() => onJoinQueue(listing)}
                 >
                   <CircleDollarSign size={17} />
-                  {!isSignedIn
-                    ? "Sign in to queue"
-                    : !profileComplete
-                      ? "Add address first"
-                    : isOwnListing
-                      ? "Your own listing"
-                    : queueFilledByOther
-                      ? "Queue filled"
-                      : queueState?.status === "loading"
-                        ? "Joining queue..."
-                        : "Join buyer queue"}
+                  {queueActionLabel}
                 </button>
               </div>
             )}
@@ -1343,7 +1343,7 @@ function ListingDrawer({
               available on NexTurn verified listings.
             </p>
             <button className="secondary-action" type="button" onClick={() => onAddToCart(listing)}>
-              <ShoppingCart size={17} /> Add to cart
+              <ShoppingCart size={17} /> Save
             </button>
           </div>
         )}
@@ -1457,7 +1457,7 @@ function CompanyFooter() {
 }
 
 export function App() {
-  const [activeView, setActiveView] = useState("sell");
+  const [activeView, setActiveView] = useState("marketplace");
   const [auth, setAuth] = useState({
     status: "loading",
     config: null,
@@ -1646,7 +1646,7 @@ export function App() {
     setSelectedFile(file);
     setFilePreview(URL.createObjectURL(file));
     setEvaluation(null);
-    setListingMessage("Photo ready. Run AI grade to evaluate condition and price.");
+    setListingMessage("Photo ready. Run grade.");
   }
 
   async function handleEvaluate() {
@@ -1675,7 +1675,7 @@ export function App() {
     }
 
     setUploading(true);
-    setListingMessage("Publishing listing to the NexTurn second-life shop...");
+    setListingMessage("Listing in the second-life shop...");
     try {
       const result = await createC2CListing(selectedFile, selectedOrder.id, normalizedProfile);
       setListingMessage(result.customerMessage ?? "Listing published.");
